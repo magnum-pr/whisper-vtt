@@ -1,6 +1,6 @@
 """PyInstaller runtime hook: pre-load native DLLs before imports.
 
-Windows only — no-op on macOS and other platforms.
+Windows only -- no-op on macOS and other platforms.
 """
 
 import sys

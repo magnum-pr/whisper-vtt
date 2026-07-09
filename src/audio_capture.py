@@ -34,10 +34,12 @@ class AudioCapture:
         sample_rate: int = SAMPLE_RATE,
         channels: int = CHANNELS,
         chunk_samples: int = SAMPLES_PER_CHUNK,
+        device_index: Optional[int] = None,
     ):
         self.sample_rate = sample_rate
         self.channels = channels
         self.chunk_samples = chunk_samples
+        self.device_index = device_index
 
         self._stream: Optional[object] = None
         self._chunks: list[np.ndarray] = []
@@ -83,6 +85,7 @@ class AudioCapture:
                 dtype="float32",
                 callback=self._audio_callback,
                 blocksize=self.chunk_samples,
+                device=self.device_index,
             )
             self._stream.start()
             self._is_recording = True

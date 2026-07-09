@@ -25,16 +25,19 @@ class WakeWordListener:
     def __init__(
         self,
         keyword: str = "alexa",
-        threshold: float = 1e-30,
+        threshold: float = 1e-20,
+        device_index: Optional[int] = None,
     ):
         """
         Args:
             keyword: The wake word/phrase to detect.
             threshold: KWS threshold (lower = more selective).
                        Default 1e-20 works for normal speaking voice.
+            device_index: sounddevice device index (None = system default).
         """
         self._keyword = keyword
         self._threshold = threshold
+        self._device_index = device_index
 
         self._on_detected: Optional[Callable[[], None]] = None
         self._running = False
@@ -208,6 +211,7 @@ class WakeWordListener:
                 dtype="float32",
                 callback=audio_callback,
                 blocksize=self.FRAME_SAMPLES,
+                device=self._device_index,
             ):
                 while self._running:
                     sd.sleep(100)

@@ -1,10 +1,48 @@
 # PROGRESS.md — Whisper VTT
 
 
-<!-- session-in-progress:start=2026-06-04T21:20:32.120Z -->
-## 2026-06-05 04:43 — Colors work (bottom bar is cyan), but RGB orange isn't supported _(in progress)_
-Colors work (bottom bar is cyan), but RGB orange isn't supported. Switching to bright yellow `\033[93m` which your terminal definitely supports:
+
+
+
+
+<!-- session-in-progress:start=2026-07-09T01:37:52.182Z -->
+## 2026-07-08 20:39 — **Changed:** `src/wake_word.py` — synced `WakeWordListener` default threshold fr... _(in progress)_
+**Changed:** `src/wake_word.py` — synced `WakeWordListener` default threshold from `1e-30` to `1e-20` (matching `DEFAULT_WAKE_WORD_THRESHOLD`). Also `.gitignore` + `_save_audio_device` fix from earlier.
+**Verified:** 177/177 passing
+**Next:** Ready to commit. All device-selection changes (`src/`, `tests/`, `PLAN.md`, `PROGRESS.md`, `scripts/runtime_hook.py`) + the two portability fixes.
 <!-- end-session-in-progress -->
+## 2026-07-08 20:37 — Two concerns
+Two concerns.
+
+**1. `config.toml` is not in `.gitignore`.** If you commit, your machine's device name leaks into the repo. On another machine, `git pull` brings a stale device name that triggers a confusing "not found" warning + re-prompt on first launch. The code handles the missing-device case correctly, so it won't break — just bad first-run UX.
+
+**2. `_save_audio_device` reconstructs `AppConfig` field-by-field.** If someone adds a field to `AppConfig` later, `_save_audio_device` silently ...
+## 2026-07-08 13:24 — **Stop.** Project working tree is dirty — uncommitted changes from the device-se...
+**Stop.** Project working tree is dirty — uncommitted changes from the device-selection work:
+
+```
+M  PLAN.md
+M  PROGRESS.md
+M  scripts/runtime_hook.py
+M  src/__main__.py
+M  src/audio_capture.py
+M  src/config_manager.py
+M  src/models.py
+M  src/wake_word.py
+M  tests/test_audio_capture.py
+M  tests/test_config_manager.py
+```
+
+Gardening requires a clean git tree so `git checkout .` can undo anything. Commit or stash these before we proceed.
+## 2026-07-08 12:55 — Audio input device selection at startup
+Added device selection prompt on first run: enumerates input devices via sounddevice,
+lets user pick by number, saves device name to config.toml for persistence across
+restarts. Device is identified by name (not index) for stability across USB
+plug/unplug. If saved device disappears, re-prompts. Passes resolved device index
+to AudioCapture→sd.InputStream. All three phases (model+config, AudioCapture param,
+prompt logic) green — 176/177 tests pass (1 pre-existing failure in wake word test).
+## 2026-06-05 04:43 — Colors work (bottom bar is cyan), but RGB orange isn't supported
+Colors work (bottom bar is cyan), but RGB orange isn't supported. Switching to bright yellow `\033[93m` which your terminal definitely supports:
 ## 2026-06-04 17:42 — Standalone whisper-cli.exe subprocess approach (WORKS)
 
 Final fix: bundled pre-built whisper-cli.exe (whisper.cpp v1.8.6) + DLLs alongside

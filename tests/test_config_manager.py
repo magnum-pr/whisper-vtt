@@ -11,6 +11,7 @@ from src.config_manager import (
     DEFAULT_RECORDING_MODE,
     DEFAULT_SILENCE_THRESHOLD_MS,
     DEFAULT_VOLUME_THRESHOLD_DB,
+    _validate_audio_device_name,
     _validate_key,
     _validate_model_path,
     _validate_modifiers,
@@ -113,6 +114,26 @@ class TestValidateVolumeThreshold:
         assert _validate_volume_threshold("loud") == DEFAULT_VOLUME_THRESHOLD_DB
 
 
+class TestValidateAudioDeviceName:
+    def test_valid_name(self):
+        assert _validate_audio_device_name("Microphone (Realtek)") == "Microphone (Realtek)"
+
+    def test_none_returns_none(self):
+        assert _validate_audio_device_name(None) is None
+
+    def test_empty_string_returns_none(self):
+        assert _validate_audio_device_name("") is None
+
+    def test_whitespace_only_returns_none(self):
+        assert _validate_audio_device_name("   ") is None
+
+    def test_non_string_returns_none(self):
+        assert _validate_audio_device_name(42) is None
+
+    def test_strips_whitespace(self):
+        assert _validate_audio_device_name("  Mic  ") == "Mic"
+
+
 class TestValidateModelPath:
     def test_valid(self):
         assert _validate_model_path("models/ggml-base.en.bin") == Path("models/ggml-base.en.bin")
@@ -137,6 +158,7 @@ class TestConfigToToml:
             silence_threshold_ms=3000,
             volume_threshold_db=-10.0,
             model_path=Path("models/ggml-base.en.bin"),
+            audio_device_name="Microphone (USB)",
         )
         toml_str = config_to_toml(config)
 
@@ -155,6 +177,7 @@ class TestConfigToToml:
             assert loaded.silence_threshold_ms == config.silence_threshold_ms
             assert loaded.volume_threshold_db == config.volume_threshold_db
             assert loaded.model_path == config.model_path
+            assert loaded.audio_device_name == "Microphone (USB)"
         finally:
             tmp_path.unlink()
 
@@ -305,6 +328,25 @@ key = "space"
             assert config.hotkey.modifiers == frozenset({"alt"})
             assert config.recording_mode == DEFAULT_RECORDING_MODE
             assert config.output_mode == DEFAULT_OUTPUT_MODE
+            assert config.audio_device_name is None
+        finally:
+            tmp_path.unlink()
+
+    def test_audio_device_config(self):
+        """Audio device name is loaded from [audio] section."""
+        toml_content = """\
+[audio]
+device_name = "Yeti Stereo Microphone"
+"""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".toml", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(toml_content)
+            tmp_path = Path(f.name)
+
+        try:
+            config = load_config(tmp_path)
+            assert config.audio_device_name == "Yeti Stereo Microphone"
         finally:
             tmp_path.unlink()
 

@@ -42,6 +42,7 @@ class AppConfig:
     model_path: Path
     wake_word: str = "alexa"
     wake_word_threshold: float = 1e-30
+    audio_device_name: Optional[str] = None  # saved device name; None = use system default
 
 
 @dataclass(frozen=True)

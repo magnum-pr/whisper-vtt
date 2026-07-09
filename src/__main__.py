@@ -8,6 +8,8 @@ import logging
 import signal
 import sys
 import traceback
+from pathlib import Path
+from typing import Optional
 
 from src.app_controller import AppController
 from src.audio_capture import AudioCapture
@@ -205,6 +207,135 @@ def setup_logging() -> None:
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
+def _resolve_audio_device(configured_name: Optional[str]) -> Optional[int]:
+    """Resolve audio input device.
+
+    If `configured_name` is set and the device exists, return its index silently.
+    Otherwise, enumerate input devices, prompt the user to pick one, save the
+    choice to config.toml, and return the selected index (None = system default).
+    """
+    logger = logging.getLogger(__name__)
+
+    try:
+        import sounddevice as sd
+    except ImportError:
+        logger.warning("sounddevice not available, using system default.")
+        return None
+
+    try:
+        devices = sd.query_devices()
+    except Exception as e:
+        logger.warning("Could not query audio devices: %s. Using system default.", e)
+        return None
+
+    # Filter to input-capable devices, de-duplicate by name (first occurrence wins)
+    seen: set[str] = set()
+    input_devices: list[dict] = []
+    for d in devices:
+        if d.get("max_input_channels", 0) > 0:
+            name: str = d.get("name", "")
+            if name not in seen:
+                seen.add(name)
+                input_devices.append(d)
+
+    if not input_devices:
+        logger.warning("No input devices found. Using system default.")
+        return None
+
+    # If a device name is configured, try exact match
+    if configured_name:
+        for idx, d in enumerate(devices):
+            if d.get("max_input_channels", 0) > 0 and d.get("name") == configured_name:
+                logger.info("Using configured audio device: %s", configured_name)
+                return idx
+        # Not found — warn and fall through to prompt
+        logger.warning(
+            "Configured audio device '%s' not found. Prompting for new selection.",
+            configured_name,
+        )
+
+    # ── Prompt ──────────────────────────────────────────────────────────
+    print(file=sys.stderr)
+    print(f"{_Term.ORANGE}Available audio input devices:{_Term.R}", file=sys.stderr)
+    print(f"  {_Term.D}0{_Term.R}  System default", file=sys.stderr)
+    for i, d in enumerate(input_devices):
+        ch = d.get("max_input_channels", 0)
+        sr = int(d.get("default_samplerate", 0))
+        print(
+            f"  {_Term.ORANGE}{i + 1}{_Term.R}  {d['name']}"
+            f"{_Term.D} ({ch}ch, {sr}Hz){_Term.R}",
+            file=sys.stderr,
+        )
+    print(file=sys.stderr)
+
+    while True:
+        try:
+            choice = input(
+                f"Select device number {_Term.D}(0-{len(input_devices)}){_Term.R}: "
+            ).strip()
+            if not choice:
+                print(f"{_Term.YELLOW}△ Using system default.{_Term.R}", file=sys.stderr)
+                return None
+            idx = int(choice)
+            if idx == 0:
+                print(f"{_Term.YELLOW}△ Using system default.{_Term.R}", file=sys.stderr)
+                return None
+            if 1 <= idx <= len(input_devices):
+                selected_name: str = input_devices[idx - 1]["name"]
+                # Find actual device list index in full devices list
+                actual_idx: Optional[int] = None
+                for di, d in enumerate(devices):
+                    if d.get("name") == selected_name:
+                        actual_idx = di
+                        break
+                if actual_idx is None:
+                    actual_idx = idx - 1  # fallback
+
+                # Save to config
+                _save_audio_device(selected_name)
+                print(
+                    f"{_Term.GREEN}● Selected: {selected_name}{_Term.R}",
+                    file=sys.stderr,
+                )
+                return actual_idx
+            else:
+                print(
+                    f"{_Term.RED}✕ Invalid selection: {idx}. "
+                    f"Choose 0-{len(input_devices)}.{_Term.R}",
+                    file=sys.stderr,
+                )
+        except ValueError:
+            print(
+                f"{_Term.RED}✕ Please enter a number.{_Term.R}",
+                file=sys.stderr,
+            )
+        except (EOFError, KeyboardInterrupt):
+            print(f"\n{_Term.YELLOW}△ Using system default.{_Term.R}", file=sys.stderr)
+            return None
+
+
+def _save_audio_device(device_name: str) -> None:
+    """Persist the selected device name to config.toml.
+
+    Uses dataclasses.replace() to mutate only the audio_device_name field
+    — avoids silently dropping new fields if AppConfig grows later.
+    """
+    from dataclasses import replace
+    from src.config_manager import load_config, config_to_toml
+
+    config_path = PathResolver.config_path()
+    try:
+        config = load_config(config_path)
+    except Exception:
+        return
+
+    updated = replace(config, audio_device_name=device_name)
+    try:
+        config_path.write_text(config_to_toml(updated), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def main() -> None:
     """Application entry point."""
     setup_logging()
@@ -241,9 +372,13 @@ def main() -> None:
         input("Press Enter to exit...")
         sys.exit(1)
 
+    # ── Audio device selection ─────────────────────────────────────────
+    logger.info("Resolving audio input device...")
+    device_index = _resolve_audio_device(config.audio_device_name)
+
     # ── Audio capture ───────────────────────────────────────────────────
     logger.info("Initializing audio capture...")
-    audio_capture = AudioCapture()
+    audio_capture = AudioCapture(device_index=device_index)
 
     # ── VAD engine ──────────────────────────────────────────────────────
     logger.info("Initializing VAD engine...")
@@ -298,6 +433,7 @@ def main() -> None:
         wake_word_listener = WakeWordListener(
             keyword=config.wake_word,
             threshold=config.wake_word_threshold,
+            device_index=device_index,
         )
         logger.info(
             "Wake word mode: '%s' (threshold %.0e)",

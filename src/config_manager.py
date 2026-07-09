@@ -20,6 +20,7 @@ DEFAULT_VOLUME_THRESHOLD_DB = -50.0
 DEFAULT_MODEL_PATH = "models/ggml-base.en.bin"
 DEFAULT_WAKE_WORD = "jarvis"
 DEFAULT_WAKE_WORD_THRESHOLD = 1e-20
+DEFAULT_AUDIO_DEVICE_NAME: Optional[str] = None
 
 # Valid values
 VALID_MODIFIERS = frozenset({"ctrl", "shift", "alt", "win"})
@@ -124,6 +125,19 @@ def _validate_volume_threshold(value) -> float:
     return DEFAULT_VOLUME_THRESHOLD_DB
 
 
+def _validate_audio_device_name(value) -> Optional[str]:
+    """Validate audio device name. Empty string or None means use system default."""
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    logger.warning(
+        "Invalid audio device name %r (expected a string). Using system default.",
+        value,
+    )
+    return None
+
+
 def _validate_model_path(value) -> Path:
     """Validate model path. Must be a non-empty string. Default: models/tiny.en.pt."""
     if isinstance(value, str) and value.strip():
@@ -223,6 +237,14 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
         model_section.get("path", DEFAULT_MODEL_PATH)
     )
 
+    # Parse [audio] section
+    audio_section = data.get("audio", {})
+    if not isinstance(audio_section, dict):
+        audio_section = {}
+    audio_device_name = _validate_audio_device_name(
+        audio_section.get("device_name", None)
+    )
+
     return AppConfig(
         hotkey=HotkeyCombo(modifiers=modifiers, key=key),
         recording_mode=recording_mode,
@@ -232,6 +254,7 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
         model_path=model_path,
         wake_word=wake_word,
         wake_word_threshold=wake_word_threshold,
+        audio_device_name=audio_device_name,
     )
 
 
@@ -259,6 +282,9 @@ threshold = {config.wake_word_threshold:.0e}
 
 [model]
 path = "{config.model_path.as_posix()}"
+
+[audio]
+device_name = "{config.audio_device_name or ''}"
 """
 
 

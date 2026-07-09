@@ -19,3 +19,6 @@ models/*.pt
 
 # PyInstaller
 *.spec
+
+# User config (device names, paths — machine-specific)
+config.toml

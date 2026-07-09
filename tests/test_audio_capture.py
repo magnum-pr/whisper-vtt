@@ -25,6 +25,7 @@ class TestAudioCaptureInit:
         assert cap.sample_rate == 16000
         assert cap.channels == 1
         assert cap.chunk_samples == SAMPLES_PER_CHUNK
+        assert cap.device_index is None
         assert not cap.is_recording
 
     def test_custom_params(self):
@@ -32,6 +33,14 @@ class TestAudioCaptureInit:
         assert cap.sample_rate == 44100
         assert cap.channels == 2
         assert cap.chunk_samples == 1024
+
+    def test_device_index_stored(self):
+        cap = AudioCapture(device_index=3)
+        assert cap.device_index == 3
+
+    def test_device_index_none_by_default(self):
+        cap = AudioCapture()
+        assert cap.device_index is None
 
 
 class TestAudioCaptureCallbacks:

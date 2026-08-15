@@ -150,9 +150,7 @@ class MacHotkeyListener:
             return None
         self._key_down = True
         if self._on_activated:
-            self._on_activated(HotkeyEvent(
-                hotkey=self._hotkey,
-                timestamp_ms=self._get_timestamp_ms()))
+            self._on_activated(self._build_event(pressed=True))
         return None
 
     def _handle_key_up(self, event):
@@ -160,10 +158,20 @@ class MacHotkeyListener:
             return event
         self._key_down = False
         if self._on_released:
-            self._on_released(HotkeyEvent(
-                hotkey=self._hotkey,
-                timestamp_ms=self._get_timestamp_ms()))
+            self._on_released(self._build_event(pressed=False))
         return None
+
+    def _build_event(self, pressed: bool) -> HotkeyEvent:
+        """Build a HotkeyEvent matching src.models.HotkeyEvent exactly.
+
+        Regression seam: an earlier version passed outdated kwargs
+        (hotkey=, no pressed=), crashing the tap thread on first press.
+        """
+        return HotkeyEvent(
+            combo=self._hotkey,
+            pressed=pressed,
+            timestamp_ms=self._get_timestamp_ms(),
+        )
 
     def _modifiers_match(self, flags: int) -> bool:
         required = set()

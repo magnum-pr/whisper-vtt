@@ -6,6 +6,7 @@ in PyInstaller bundles unlike onnxruntime/torch.
 
 import logging
 import threading
+import time
 from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
@@ -204,17 +205,27 @@ class WakeWordListener:
             else:
                 consecutive_hits = 0
 
-        try:
-            with sd.InputStream(
-                samplerate=self.SAMPLE_RATE,
-                channels=1,
-                dtype="float32",
-                callback=audio_callback,
-                blocksize=self.FRAME_SAMPLES,
-                device=self._device_index,
-            ):
-                while self._running:
-                    sd.sleep(100)
-        except Exception as e:
-            logger.error("Wake word audio stream error: %s", e)
-            self._running = False
+        # Open/close the stream in a loop: while recording is in progress
+        # (_paused), the wake word stream is CLOSED so the recording's own
+        # PortAudio stream gets exclusive mic access. Two concurrent input
+        # streams on macOS fail with PaErrorCode -9986 and/or capture no
+        # samples. On resume, the stream reopens and detection continues.
+        while self._running:
+            if self._paused:
+                time.sleep(0.1)
+                continue
+            try:
+                with sd.InputStream(
+                    samplerate=self.SAMPLE_RATE,
+                    channels=1,
+                    dtype="float32",
+                    callback=audio_callback,
+                    blocksize=self.FRAME_SAMPLES,
+                    device=self._device_index,
+                ):
+                    while self._running and not self._paused:
+                        sd.sleep(100)
+            except Exception as e:
+                logger.error("Wake word audio stream error: %s", e)
+                self._running = False
+                break

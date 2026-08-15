@@ -20,4 +20,4 @@ threshold = 1e-20
 path = "models/ggml-base.en.bin"
 
 [audio]
-device_name = ""
+device_name = "MacBook Pro Microphone"

@@ -175,6 +175,13 @@ class AppController:
         if self._status != AppStatus.IDLE:
             return
 
+        # Pause the wake word listener FIRST: pause() blocks until its
+        # PortAudio stream is closed, so the recording stream below gets
+        # exclusive mic access. Opening both streams concurrently fails
+        # with PaErrorCode -9986 and/or captures zero samples.
+        if self._wake_word_listener:
+            self._wake_word_listener.pause()
+
         self._vad_engine.reset()
 
         try:
@@ -182,15 +189,13 @@ class AppController:
         except AudioCaptureError as e:
             logger.error("Failed to start recording: %s", e)
             self._tray.show_notification("Whisper VTT", f"Microphone error: {e}")
+            if self._wake_word_listener:
+                self._wake_word_listener.resume()
             return
 
         self._set_status(AppStatus.RECORDING)
         logger.info("Recording started.")
         self._tray.show_notification("Whisper VTT", "Recording started")
-
-        # Pause wake word listener to prevent self-triggering during recording
-        if self._wake_word_listener:
-            self._wake_word_listener.pause()
 
     def _stop_recording(self) -> None:
         """Stop recording and begin transcription."""
@@ -208,6 +213,8 @@ class AppController:
         if buffer.duration_seconds < 0.1:
             logger.debug("Recording too short (%.2fs), discarding.", buffer.duration_seconds)
             self._set_status(AppStatus.IDLE)
+            if self._wake_word_listener:
+                self._wake_word_listener.resume()
             return
 
         self._set_status(AppStatus.TRANSCRIBING)

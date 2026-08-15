@@ -46,6 +46,11 @@ class WakeWordListener:
         self._cooldown_until: float = 0.0
         self._thread: Optional[threading.Thread] = None
         self._decoder: Optional[object] = None
+        # Set while no InputStream is open. Cleared on open, set again on
+        # close — pause() waits on it so the recording stream never opens
+        # while the wake word stream still holds the mic.
+        self._stream_closed = threading.Event()
+        self._stream_closed.set()
 
     # ── Callback registration ──────────────────────────────────────────
 
@@ -97,16 +102,25 @@ class WakeWordListener:
         logger.info("Wake word listener stopped.")
 
     def pause(self) -> None:
-        """Pause wake word detection. Audio frames are still consumed
-        (to keep the stream alive) but no keyword spotting runs."""
+        """Pause wake word detection AND close the audio stream.
+
+        Blocks (bounded) until the stream is actually closed so the
+        recording stream gets exclusive mic access. Two concurrent
+        PortAudio input streams on macOS fail with PaErrorCode -9986
+        and/or capture zero samples.
+        """
         self._paused = True
-        logger.debug("Wake word listener paused.")
+        if not self._stream_closed.wait(timeout=2.0):
+            logger.warning("Wake word stream did not close within 2s.")
+        logger.debug("Wake word listener paused (stream closed).")
 
     def resume(self) -> None:
-        """Resume wake word detection. Resets decoder state and enforces
-        a 3s cooldown so stale audio/echo doesn't cause false triggers."""
+        """Resume wake word detection. Reopens the audio stream, resets
+        decoder state and enforces a 3s cooldown so stale audio/echo
+        doesn't cause false triggers."""
         import time
         self._paused = False
+        self._stream_closed.clear()
         self._cooldown_until = time.monotonic() + 2.0
         if self._decoder is not None:
             try:
@@ -205,16 +219,12 @@ class WakeWordListener:
             else:
                 consecutive_hits = 0
 
-        # Open/close the stream in a loop: while recording is in progress
-        # (_paused), the wake word stream is CLOSED so the recording's own
-        # PortAudio stream gets exclusive mic access. Two concurrent input
-        # streams on macOS fail with PaErrorCode -9986 and/or capture no
-        # samples. On resume, the stream reopens and detection continues.
         while self._running:
             if self._paused:
                 time.sleep(0.1)
                 continue
             try:
+                self._stream_closed.clear()
                 with sd.InputStream(
                     samplerate=self.SAMPLE_RATE,
                     channels=1,
@@ -228,4 +238,5 @@ class WakeWordListener:
             except Exception as e:
                 logger.error("Wake word audio stream error: %s", e)
                 self._running = False
-                break
+            finally:
+                self._stream_closed.set()

@@ -16,6 +16,7 @@ dictation.log
 
 # Whisper models (large binary files)
 models/*.pt
+models/*.bin
 
 # PyInstaller
 *.spec

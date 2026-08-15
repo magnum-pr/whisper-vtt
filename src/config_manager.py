@@ -129,8 +129,12 @@ def _validate_audio_device_name(value) -> Optional[str]:
     """Validate audio device name. Empty string or None means use system default."""
     if value is None:
         return None
-    if isinstance(value, str) and value.strip():
-        return value.strip()
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped:
+            return stripped
+        # Empty/whitespace string = explicit system default
+        return None
     logger.warning(
         "Invalid audio device name %r (expected a string). Using system default.",
         value,

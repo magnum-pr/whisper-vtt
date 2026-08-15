@@ -23,6 +23,7 @@ MAC_KEYCODE_MAP = {
     **{chr(c).lower(): c - ord("a") for c in range(ord("A"), ord("Z") + 1)},
     **{str(i): 29 + i for i in range(10)},
     "backtick": 50,
+    "`": 50, "~": 50,
     "-": 27, "=": 24, "[": 33, "]": 30, "\\": 42,
     ";": 41, "'": 39, ",": 43, ".": 47, "/": 44,
     "space": 49, "tab": 48, "enter": 36, "backspace": 51,
@@ -87,8 +88,9 @@ class MacHotkeyListener:
 
     def _run_event_tap(self) -> None:
         import Quartz
-        trusted = Quartz.AXIsProcessTrustedWithOptions(
-            {Quartz.kAXTrustedCheckOptionPrompt: True})
+        import ApplicationServices
+        trusted = ApplicationServices.AXIsProcessTrustedWithOptions(
+            {ApplicationServices.kAXTrustedCheckOptionPrompt: True})
         if not trusted:
             logger.error(
                 "Accessibility permission not granted. "

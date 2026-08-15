@@ -242,6 +242,11 @@ def _resolve_audio_device(configured_name: Optional[str]) -> Optional[int]:
         logger.warning("No input devices found. Using system default.")
         return None
 
+    # No configured device (or explicit system default) — use it silently
+    if not configured_name:
+        logger.info("No audio device configured — using system default.")
+        return None
+
     # If a device name is configured, try exact match
     if configured_name:
         for idx, d in enumerate(devices):

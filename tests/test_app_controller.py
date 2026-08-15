@@ -1,6 +1,6 @@
 """Tests for AppController state machine."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import numpy as np
 
@@ -780,3 +780,56 @@ class TestWakeWordPauseResume:
             samples=np.zeros(16000, dtype=np.float32),
             sample_rate=16000,
         ))
+
+
+class TestWakeWordStartOrdering:
+    """Wake word listener must start BEFORE the tray.
+
+    Regression: on macOS MacSystemTray.start() blocks on the rumps
+    NSApplication run loop, so anything ordered after tray.start() in
+    AppController.start() never ran — the wake word was silently dead.
+    """
+
+    def test_wake_word_starts_before_tray(self):
+        tray = MagicMock()
+        hotkey = MagicMock()
+        wake = MagicMock()
+
+        controller = AppController(
+            config=make_wake_word_config(),
+            tray=tray,
+            hotkey_listener=hotkey,
+            audio_capture=MagicMock(),
+            vad_engine=MagicMock(),
+            transcription_engine=MagicMock(),
+            output_handler=MagicMock(),
+            wake_word_listener=wake,
+        )
+
+        parent = MagicMock()
+        parent.attach_mock(wake.start, "wake_start")
+        parent.attach_mock(tray.start, "tray_start")
+
+        controller.start()
+
+        assert parent.mock_calls.index(call.wake_start()) < parent.mock_calls.index(
+            call.tray_start()
+        )
+
+    def test_wake_word_starts_in_wake_word_mode(self):
+        wake = MagicMock()
+
+        controller = AppController(
+            config=make_wake_word_config(),
+            tray=MagicMock(),
+            hotkey_listener=MagicMock(),
+            audio_capture=MagicMock(),
+            vad_engine=MagicMock(),
+            transcription_engine=MagicMock(),
+            output_handler=MagicMock(),
+            wake_word_listener=wake,
+        )
+
+        controller.start()
+
+        wake.start.assert_called_once()

@@ -292,6 +292,11 @@ class MacSystemTray:
                 logger.debug("Beep failed: %s", e)
 
     def start(self) -> None:
+        # Re-entry guard: rumps NSApplication.run() blocks, and start() is
+        # called from AppController.start() (and possibly again from the
+        # caller's platform run loop). Never start a second app instance.
+        if self._app is not None:
+            return
         try:
             import rumps
         except ImportError:

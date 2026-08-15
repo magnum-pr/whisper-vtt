@@ -77,9 +77,10 @@ class AppController:
         logger.info("AppController starting.")
         self._set_status(AppStatus.IDLE)
         self._hotkey_listener.start()
-        self._tray.start()
 
-        # In wake word mode, start continuous listening
+        # In wake word mode, start continuous listening.
+        # MUST run before tray.start(): on macOS the tray's rumps run loop
+        # blocks the calling thread, so anything after it never executes.
         if (
             self._config.recording_mode == RecordingMode.WAKE_WORD
             and self._wake_word_listener
@@ -90,6 +91,8 @@ class AppController:
                 self._config.wake_word,
                 self._config.wake_word_threshold,
             )
+
+        self._tray.start()
 
     def stop(self) -> None:
         """Stop the application gracefully."""

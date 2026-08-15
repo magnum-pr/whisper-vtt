@@ -531,35 +531,41 @@ def main() -> None:
     controller.set_status_callback(_on_status)
 
     logger.info("Starting app (tray + hotkey)...")
-    controller.start()
-    logger.info("Whisper VTT running. Press %s to dictate.", config.hotkey)
 
-    # Platform-specific run loop.
-    # - Windows: tray/hotkey on daemon threads, main thread processes queue.
-    # - macOS: tray must own the main thread (NSApplication run loop),
-    #   so queue processing moves to a worker thread.
+    # On macOS the tray's rumps run loop owns the main thread from
+    # controller.start() onward, so the transcription queue worker must
+    # already be running before that blocking call.
+    queue_worker = None
     if sys.platform == "darwin":
-        import time
         import threading
 
         def _worker_loop():
             while getattr(_worker_loop, "running", True):
                 controller.process_queue(timeout=1.0)
-        _worker_loop.running = True
-        worker = threading.Thread(
-            target=_worker_loop, daemon=True, name="queue-worker")
-        worker.start()
 
+        _worker_loop.running = True
+        queue_worker = threading.Thread(
+            target=_worker_loop, daemon=True, name="queue-worker")
+        queue_worker.start()
+
+    logger.info("Whisper VTT running. Press %s to dictate.", config.hotkey)
+
+    # Platform-specific run loop.
+    # - Windows: tray/hotkey on daemon threads, main thread processes queue.
+    # - macOS: tray owns the main thread (NSApplication run loop),
+    #   so controller.start() blocks here until rumps quits.
+    if sys.platform == "darwin":
         try:
-            tray.start()  # blocks until rumps quits (Exit menu or Cmd+Q)
+            controller.start()  # blocks until rumps quits (Exit menu or Cmd+Q)
         except KeyboardInterrupt:
             pass
         finally:
             _worker_loop.running = False
-            worker.join(timeout=2)
+            queue_worker.join(timeout=2)
             on_exit()
     else:
         # Windows: main thread runs queue, tray/hotkey on daemon threads
+        controller.start()
         try:
             import time
             while True:

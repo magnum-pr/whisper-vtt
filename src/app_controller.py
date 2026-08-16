@@ -13,6 +13,7 @@ from src.audio_capture import AudioCapture, AudioCaptureError
 from src.config_manager import AppConfig, RecordingMode
 from src.backends import HotkeyListener, OutputHandler, SystemTray
 from src.models import AppStatus, AudioBuffer, HotkeyEvent
+from src.dropbox import append_dictation
 from src.transcription_engine import TranscriptionEngine, TranscriptionError
 from src.vad_engine import VADEngine
 
@@ -282,6 +283,10 @@ class AppController:
             return
 
         if text:
+            # Drop box side channel — every transcription is journaled for
+            # pi's whisper-vtt skill (tasks, lessons, journal, status).
+            # Never blocks or raises; the paste/send path is primary.
+            append_dictation(text)
             self._deliver_text(text)
 
         self._set_status(AppStatus.IDLE)

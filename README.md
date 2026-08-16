@@ -259,6 +259,28 @@ paste misses, the text is always on the clipboard as a fallback.
 
 ---
 
+## Talking to Jarvis (dictation → pi)
+
+Every transcription lands in a local drop box that the pi coding agent's
+`whisper-vtt` skill reads. A spoken prefix tells pi what to do with it —
+the keywords are natural speech:
+
+| You say | pi does |
+|---|---|
+| "Jarvis, **task:** fix the deploy timeout" | files it in `TASKS.md` |
+| "Jarvis, **lesson:** never close an audio stream in its callback" | files it for the gardening pipeline |
+| "Jarvis, **journal:** Sharon confirmed Dance $65" | saves it as session context |
+| "Jarvis, **status:** merged testimonials, starting mic meter" | timestamps a line into `PROGRESS.md` |
+| "Jarvis, **note:** pick up milk" | shows it to you, unfiled |
+| "Jarvis, fix the bug on the homepage **Enter**" | treats it as a message to pi and sends it |
+
+In pi, say **"process my dictations"** — it reads the drop box, files
+every entry, and reports where each one went. (Requires the
+`whisper-vtt` pi skill — see its `references/jarvis-guide.md` for the
+full command reference.)
+
+---
+
 ## Development
 
 ```bash

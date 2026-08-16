@@ -102,3 +102,10 @@
 - [x] Session controls — "scratch that" drops the last item; "that's all" (and variants) commits; a new session trigger mid-session commits the previous one first.
 - [x] Commit — structured drop box entry (kind=session, title, items) + auto-delivery of "process my dictations" so pi files the compiled task list immediately. Idle timeout (config `[session] timeout_s = 60`) auto-commits — no work lost. Quit also commits to the drop box.
 - [x] Feedback — session-start chime + notification; per-item Tink tick + menu bar item count (rumps title); commit notification.
+
+## Done (2026-08-16 evening 2) — sticky follow-up mode + docs refresh
+
+- [x] Sticky sessions — after any plain dictation, whisper stays armed for follow-ups (speech onset, no wake word); each follow-up delivered live. `[session] sticky = true` default.
+- [x] Lapse gate — `[session] lapse_s = 20`: silence longer than this disarms sticky; the next utterance needs "jarvis" again (podcasts/calls can't hijack the mic). "that's all" disarms at any time.
+- [x] Sticky never accumulates/commits; "start a new session for X" mid-sticky switches to a compile session; "scratch that" is ignored in sticky.
+- [x] README rewritten from scratch — dictation language, sessions, sticky, drop box prefixes, output-paired routing, self-calibrating VAD, hot-reload, handshake, full config reference, current project structure.

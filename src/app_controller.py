@@ -452,19 +452,18 @@ class AppController:
             if topic is not None:
                 self._start_session(topic)
                 return
-            # Plain single dictation: journal + deliver as usual.
-            journal_text = text
-            if self._output_handler.mode == OutputMode.PROTECTED:
-                journal_text, _ = extract_send_intent(text)
-            # The no-send override phrase is a command, not dictation —
-            # strip it so the skill never routes it.
-            journal_text, _ = extract_no_send_intent(journal_text)
-            if journal_text:
-                append_dictation(journal_text)
-            self._deliver_text(text)
+            # Plain single dictation: journal + deliver as usual, then
+            # stay armed for follow-ups (sticky mode) when enabled.
+            self._journal_and_deliver(text)
+            if self._config.sticky_sessions:
+                self._start_sticky_session()
             return
 
-        # Session is open — commands first.
+        if self._session.sticky:
+            self._route_sticky(text)
+            return
+
+        # Compile session — commands first.
         if is_session_end(text):
             self._commit_session(timed_out=False)
             return
@@ -498,6 +497,62 @@ class AppController:
                 sound="/System/Library/Sounds/Tink.aiff",
                 notify=False,
             )
+
+    def _route_sticky(self, text: str) -> None:
+        """Sticky follow-up mode: deliver live, no wake word, until
+        'that's all' or the lapse gate disarms."""
+        if is_session_end(text):
+            self._close_sticky_session(spoken=True)
+            return
+        if is_scratch(text):
+            # Nothing accumulates in sticky mode — ignore, but keep the
+            # follow-up window open.
+            self._session_last_activity = time.monotonic()
+            return
+        topic = parse_session_start(text)
+        if topic is not None:
+            # Switch to a compile session mid-follow-up.
+            self._close_sticky_session(spoken=False)
+            self._start_session(topic)
+            return
+        self._session_last_activity = time.monotonic()
+        self._journal_and_deliver(text)
+
+    def _journal_and_deliver(self, text: str) -> None:
+        """Journal one dictation to the drop box and deliver it."""
+        journal_text = text
+        if self._output_handler.mode == OutputMode.PROTECTED:
+            journal_text, _ = extract_send_intent(text)
+        # The no-send override phrase is a command, not dictation —
+        # strip it so the skill never routes it.
+        journal_text, _ = extract_no_send_intent(journal_text)
+        if journal_text:
+            append_dictation(journal_text)
+        self._deliver_text(text)
+
+    def _start_sticky_session(self) -> None:
+        """Arm follow-up listening after a plain dictation.
+
+        Silent (menu bar dot only) — the user just dictated; a chime
+        after every command would be noise.
+        """
+        self._session = SessionState(title="", sticky=True)
+        self._session_last_activity = time.monotonic()
+        self._tray.set_session_indicator("●")
+        logger.info("Sticky follow-up armed.")
+
+    def _close_sticky_session(self, spoken: bool) -> None:
+        """Disarm follow-up listening."""
+        self._session = None
+        self._tray.set_session_indicator("")
+        if spoken:
+            self._tray.show_notification(
+                "Whisper VTT",
+                "Follow-up listening off.",
+                play_sound=True,
+                sound="/System/Library/Sounds/Tink.aiff",
+            )
+        logger.info("Sticky follow-up ended.")
 
     def _start_session(self, topic: str) -> None:
         """Open a dictation session."""
@@ -550,6 +605,11 @@ class AppController:
 
         if session is None:
             return
+        if session.sticky:
+            # Defensive: sticky sessions never commit — nothing
+            # accumulated to lose.
+            logger.info("Sticky follow-up ended (commit path).")
+            return
         items = [item for item in session.items if item.strip()]
         if not items:
             self._tray.show_notification(
@@ -581,10 +641,20 @@ class AppController:
         logger.info(message)
 
     def _check_session_timeout(self) -> None:
-        """Auto-commit an open session after idle timeout (no work lost)."""
+        """Sticky sessions disarm on the lapse gate; compile sessions
+        auto-commit after the idle timeout (no work lost)."""
         if self._session is None or self._status != AppStatus.IDLE:
             return
-        if time.monotonic() - self._session_last_activity >= self._config.session_timeout_s:
+        elapsed = time.monotonic() - self._session_last_activity
+        if self._session.sticky:
+            if elapsed >= self._config.lapse_s:
+                logger.info(
+                    "Sticky lapse (%.0fs) — follow-up listening off.",
+                    self._config.lapse_s,
+                )
+                self._close_sticky_session(spoken=False)
+            return
+        if elapsed >= self._config.session_timeout_s:
             logger.info(
                 "Session '%s' idle timeout (%.0fs) — auto-committing.",
                 self._session.title,

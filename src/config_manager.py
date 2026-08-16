@@ -24,6 +24,8 @@ DEFAULT_AUDIO_DEVICE_NAME: Optional[str] = None
 DEFAULT_REFRESH_INTERVAL_S = 120.0
 DEFAULT_CALIBRATION_MARGIN_DB = 8.0
 DEFAULT_SESSION_TIMEOUT_S = 60.0
+DEFAULT_STICKY_SESSIONS = True
+DEFAULT_LAPSE_S = 20.0
 
 # Valid values
 VALID_MODIFIERS = frozenset({"ctrl", "shift", "alt", "win"})
@@ -185,6 +187,30 @@ def _validate_session_timeout(value) -> float:
     return DEFAULT_SESSION_TIMEOUT_S
 
 
+def _validate_sticky_sessions(value) -> bool:
+    """Validate sticky_sessions. Must be a bool."""
+    if isinstance(value, bool):
+        return value
+    logger.warning(
+        "Invalid sticky_sessions %r (expected true/false). Using default: %s.",
+        value,
+        DEFAULT_STICKY_SESSIONS,
+    )
+    return DEFAULT_STICKY_SESSIONS
+
+
+def _validate_lapse(value) -> float:
+    """Validate the sticky lapse gate. Must be a positive number."""
+    if isinstance(value, (int, float)) and value > 0:
+        return float(value)
+    logger.warning(
+        "Invalid lapse_s %r (expected positive number). Using default: %.0f.",
+        value,
+        DEFAULT_LAPSE_S,
+    )
+    return DEFAULT_LAPSE_S
+
+
 def _validate_paste_target(value) -> str:
     """Validate paste target. Any non-empty string; special values:
     'frontmost' (default) and 'pi' (auto-resolve the pi host app)."""
@@ -325,6 +351,12 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
     session_timeout_s = _validate_session_timeout(
         session_section.get("timeout_s", DEFAULT_SESSION_TIMEOUT_S)
     )
+    sticky_sessions = _validate_sticky_sessions(
+        session_section.get("sticky", DEFAULT_STICKY_SESSIONS)
+    )
+    lapse_s = _validate_lapse(
+        session_section.get("lapse_s", DEFAULT_LAPSE_S)
+    )
 
     return AppConfig(
         hotkey=HotkeyCombo(modifiers=modifiers, key=key),
@@ -340,6 +372,8 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
         refresh_interval_s=refresh_interval_s,
         calibration_margin_db=calibration_margin_db,
         session_timeout_s=session_timeout_s,
+        sticky_sessions=sticky_sessions,
+        lapse_s=lapse_s,
     )
 
 
@@ -378,6 +412,8 @@ calibration_margin_db = {config.calibration_margin_db:.1f}
 
 [session]
 timeout_s = {config.session_timeout_s:.0f}
+sticky = {'true' if config.sticky_sessions else 'false'}
+lapse_s = {config.lapse_s:.0f}
 """
 
 

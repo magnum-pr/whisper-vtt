@@ -74,11 +74,17 @@ def is_scratch(text: str) -> bool:
 
 @dataclass
 class SessionState:
-    """An open dictation session."""
+    """An open dictation session.
+
+    Compile sessions ("start a new session for X") accumulate items and
+    commit a titled task list. Sticky sessions deliver every utterance
+    live — they only relax the wake word requirement for follow-ups.
+    """
 
     title: str
     items: list = field(default_factory=list)
     started_at: float = field(default_factory=time.time)
+    sticky: bool = False
 
     def default_title(self) -> str:
         return f"Dictation session {time.strftime('%H:%M', time.localtime(self.started_at))}"

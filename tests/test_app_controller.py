@@ -1484,3 +1484,152 @@ class TestDictationSession:
         ]
         assert len(session_call) == 1
         assert session_call[0].kwargs["items"] == ["unfinished item"]
+
+
+# ── Sticky follow-up mode ───────────────────────────────────────────
+
+
+class TestStickySessions:
+    def _controller(self, transcribe_results, sticky=True, lapse_s=20.0):
+        transcription = MagicMock()
+        transcription.transcribe.side_effect = transcribe_results
+        output = MagicMock()
+        output.mode = OutputMode.AUTO_SEND
+        config = make_wake_word_config()
+        config = AppConfig(
+            hotkey=config.hotkey,
+            recording_mode=config.recording_mode,
+            output_mode=config.output_mode,
+            silence_threshold_ms=config.silence_threshold_ms,
+            volume_threshold_db=config.volume_threshold_db,
+            model_path=config.model_path,
+            sticky_sessions=sticky,
+            lapse_s=lapse_s,
+        )
+        controller = AppController(
+            config=config,
+            tray=MagicMock(),
+            hotkey_listener=MagicMock(),
+            audio_capture=MagicMock(),
+            vad_engine=MagicMock(),
+            transcription_engine=transcription,
+            output_handler=output,
+            wake_word_listener=MagicMock(),
+        )
+        return controller, output
+
+    def _buffer(self):
+        return AudioBuffer(
+            samples=np.zeros(16000, dtype=np.float32),
+            sample_rate=16000,
+        )
+
+    def test_plain_dictation_arms_sticky(self):
+        controller, output = self._controller(["show me the tasks"])
+        with patch("src.app_controller.append_dictation"):
+            controller._do_transcribe(self._buffer())
+        assert controller._session is not None
+        assert controller._session.sticky is True
+
+    def test_follow_up_delivered_live(self):
+        controller, output = self._controller([
+            "show me the tasks",
+            "now open the homepage file",
+        ])
+        with patch("src.app_controller.append_dictation") as append:
+            controller._do_transcribe(self._buffer())
+            controller._do_transcribe(self._buffer())
+        assert output.deliver.call_args_list[-1].args[0] == "now open the homepage file"
+        assert append.call_args_list[-1].args[0] == "now open the homepage file"
+        # still armed
+        assert controller._session is not None
+
+    def test_thats_all_disarms_sticky_without_commit(self):
+        controller, output = self._controller([
+            "show me the tasks",
+            "that's all",
+        ])
+        with patch("src.app_controller.append_dictation") as append:
+            controller._do_transcribe(self._buffer())
+            controller._do_transcribe(self._buffer())
+        assert controller._session is None
+        # no session entry in the drop box, no handoff delivery
+        session_entries = [
+            c for c in append.call_args_list
+            if c.kwargs.get("kind") == "session"
+        ]
+        assert session_entries == []
+        assert all(
+            c.args[0] != "process my dictations"
+            for c in output.deliver.call_args_list
+        )
+
+    def test_sticky_disabled_no_session(self):
+        controller, output = self._controller(
+            ["show me the tasks"], sticky=False)
+        with patch("src.app_controller.append_dictation"):
+            controller._do_transcribe(self._buffer())
+        assert controller._session is None
+
+    def test_lapse_disarms_sticky(self):
+        controller, output = self._controller([
+            "show me the tasks",
+            "a quick follow-up",
+        ])
+        with patch("src.app_controller.append_dictation"):
+            controller._do_transcribe(self._buffer())
+            controller._do_transcribe(self._buffer())
+        assert controller._session is not None
+
+        with patch("src.app_controller.time.monotonic",
+                   return_value=controller._session_last_activity + 21.0):
+            controller._check_session_timeout()
+        assert controller._session is None
+        controller._tray.set_session_indicator.assert_called_with("")
+
+    def test_lapse_not_reached_keeps_sticky(self):
+        controller, output = self._controller(["show me the tasks"])
+        with patch("src.app_controller.append_dictation"):
+            controller._do_transcribe(self._buffer())
+        with patch("src.app_controller.time.monotonic",
+                   return_value=controller._session_last_activity + 5.0):
+            controller._check_session_timeout()
+        assert controller._session is not None
+
+    def test_scratch_ignored_in_sticky(self):
+        controller, output = self._controller([
+            "show me the tasks",
+            "scratch that",
+        ])
+        with patch("src.app_controller.append_dictation"):
+            controller._do_transcribe(self._buffer())
+            controller._do_transcribe(self._buffer())
+        # not delivered, not journaled, still armed
+        assert output.deliver.call_count == 1
+        assert controller._session is not None
+
+    def test_session_trigger_switches_sticky_to_compile(self):
+        controller, output = self._controller([
+            "show me the tasks",
+            "start a new session for the nav bar",
+        ])
+        with patch("src.app_controller.append_dictation"):
+            controller._do_transcribe(self._buffer())
+            controller._do_transcribe(self._buffer())
+        assert controller._session is not None
+        assert controller._session.sticky is False
+        assert controller._session.title == "the nav bar"
+
+    def test_sticky_never_auto_commits_on_session_timeout(self):
+        # sticky uses the lapse gate, not session_timeout_s — even at
+        # 10x the timeout with a long lapse, nothing commits.
+        controller, output = self._controller(
+            ["show me the tasks"], lapse_s=9999.0)
+        with patch("src.app_controller.append_dictation") as append:
+            controller._do_transcribe(self._buffer())
+            append.reset_mock()
+            with patch("src.app_controller.time.monotonic",
+                       return_value=controller._session_last_activity + 5000.0):
+                controller._check_session_timeout()
+        append.assert_not_called()
+        assert controller._session is not None

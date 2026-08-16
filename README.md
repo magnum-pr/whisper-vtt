@@ -1,54 +1,236 @@
 # Whisper VTT
 
-> A portable, fully offline, system-wide dictation utility for Windows and macOS. Press a hotkey or say a wake word, speak, and your words appear as text — transcribed locally. No audio ever leaves the machine.
+> A portable, fully offline, system-wide dictation utility — built to talk
+> to [pi](https://github.com/earendil-works/pi-coding-agent) (and anything
+> else that accepts text). Say a wake word, speak, and your words appear
+> as text, transcribed locally. No audio ever leaves the machine.
 
 ---
 
-## What it does
+## What it is
 
-1. Listens for a **global hotkey** (default: backtick) or **wake word** from any application
-2. Captures microphone audio at 16kHz mono with voice activity detection
-3. Transcribes locally via **whisper.cpp (GGML)** on CPU — no GPU, no network, no API keys
-4. Delivers transcribed text to the **clipboard**, **auto-pastes** it into the focused app, or **auto-sends** it (paste + Enter) depending on output mode
-5. Lives in the **system tray / menu bar** with colored status indicators
+Whisper VTT listens system-wide for a **wake word** ("jarvis") or a
+**hotkey**, records your voice, transcribes it locally with
+**whisper.cpp (GGML)** on CPU, and delivers the text where you want it —
+pasted into pi, sent as a command, compiled into a task list, or filed
+into your notes. It lives in the menu bar with a live mic meter, a
+calibrated noise floor, and a whole dictation language on top.
+
+```
+say "jarvis" ──▶ record ──▶ transcribe (local, offline)
+                          ├─▶ paste + send into pi (modes: clipboard / auto_paste / auto_send / protected)
+                          ├─▶ drop box journal (every dictation)
+                          ├─▶ sessions: compile a titled task list from many items
+                          └─▶ sticky mode: stay armed for follow-ups — no wake word between commands
+```
 
 ---
 
-## Why
+## Highlights
 
-Every dictation tool either phones home, needs an internet connection, requires admin install, or only works inside one app. Whisper VTT runs from a single folder — unzip, double-click, start dictating. Your voice data never leaves the machine.
-
----
-
-## Features
-
-| Feature | Detail |
+| Capability | What it does |
 |---|---|
-| **100% offline** | whisper.cpp GGML inference on CPU — no network calls |
-| **Portable** | Single folder distribution via PyInstaller — no installer, no admin rights |
-| **System-wide hotkey** | Works in any application (IDEs, terminals, email, browsers) |
-| **Wake word** | Optional voice activation — say a phrase to start recording |
-| **VDI-compatible** | PortAudio via sounddevice for virtual desktop audio redirection |
-| **VAD auto-stop** | RMS energy-based voice activity detection stops recording when you stop speaking |
-| **Flexible output modes** | Clipboard-only, auto-paste, or auto-send with a spoken "Enter" guard-rail |
-| **TOML config** | Power-user config for hotkey, model, VAD sensitivity, wake word, output mode |
-| **Model selector** | Bundles `tiny.en` (~75MB); supports any whisper.cpp GGML model |
-| **Zero-config start** | Sensible defaults — creates config on first run |
+| **100% offline** | whisper.cpp GGML inference on CPU — no network, no API keys, no GPU |
+| **Wake word or hotkey** | Say "jarvis" or press `` ` `` (configurable) from any app |
+| **Output modes** | `clipboard`, `auto_paste`, `auto_send` (always Enter), `protected` (spoken "enter" trigger + window guard) — switchable **by voice**, no restart |
+| **Dictation sessions** | *"Jarvis, start a new session for AlignMe website"* → narrate item after item (no wake word between them) → *"that's all"* commits a titled task list |
+| **Sticky follow-ups** | After any command, whisper stays armed — follow-ups flow naturally; the lapse gate re-arms the wake word after ~20s of silence |
+| **Pi drop box** | Every dictation is journaled locally; pi's `whisper-vtt` skill routes `task:` / `lesson:` / `journal:` / `status:` / `note:` prefixes into your project files |
+| **Output-paired mic routing** | The mic follows what you're *hearing* from: AirPods out → AirPods mic, MacBook speakers → MacBook mic — resolved fresh at every recording |
+| **Self-calibrating VAD** | A rolling ambient noise floor (fan, AC, room) recalibrates the silence threshold continuously — no more recording that runs long because of background noise |
+| **Config hot-reload** | `config.toml` changes apply on the next dictation — no restart |
+| **Single-instance guard** | Launching whisper ends any previous instance — two mics fighting over one stream is a thing of the past |
+| **Pi handshake** | pi registers its window in a state file; whisper targets it positively instead of AppleScript-guessing |
+| **Menu bar telemetry** | Live mic level, silent-mic watchdog, session item count, status colors |
 
 ---
 
-## Tech stack
+## Setup
 
-| Component | Tech |
+### macOS (primary target)
+
+```bash
+# 1. Clone
+git clone https://github.com/magnum-pr/whisper-vtt.git
+cd whisper-vtt
+
+# 2. Install (venv recommended)
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# 3. Download the default model (~141MB)
+python scripts/download_model.py base.en
+
+# 4. Run
+python -m src
+```
+
+Two one-time permissions, then relaunch:
+
+1. **Microphone** — System Settings → Privacy & Security → Microphone →
+   enable your terminal app. Without it, macOS hands over a silent stream.
+2. **Accessibility** — System Settings → Privacy & Security →
+   Accessibility → add your terminal app. Required for the global hotkey
+   (Quartz event tap) and auto-paste.
+
+### Windows
+
+```bash
+pip install -r requirements.txt
+python scripts/download_model.py base.en
+python -m src
+```
+
+(Windows uses pystray + pywin32; the full suite includes Windows-only
+tests that are skipped on macOS.)
+
+### Portable distribution
+
+```bash
+python scripts/build.py   # → dist/Whisper-VTT/ — run from a folder, no install
+```
+
+---
+
+## The dictation language
+
+### Output modes
+
+| Mode | Behavior |
 |---|---|
-| Language | Python 3.11+ |
-| Transcription | whisper.cpp via pywhispercpp (GGML, CPU-only) |
-| Audio capture | sounddevice (PortAudio) |
-| Hotkey | pywin32 global keyboard hook (Windows) · Quartz event tap (macOS) |
-| System tray | pystray + Pillow (Windows) · rumps menu bar app (macOS) |
-| Config | TOML (tomllib/tomli) |
-| Packaging | PyInstaller `--onedir` |
-| Testing | pytest + hypothesis |
+| `clipboard` | Text lands on the clipboard — you paste manually |
+| `auto_paste` *(auto-send off)* | Copies + pastes into the target app; never presses Enter |
+| `auto_send` *(auto-send on)* | Pastes + **always presses Enter** — every dictation is a message. A safety net withholds the Enter when **no pi host is running at all**, so a random app never receives a stray send |
+| `protected` | Pastes; presses Enter **only** when you end with the spoken word *"enter"* **and** pi's window is positively frontmost (handshake or title evidence) |
+
+**Change modes by voice:** *"change auto_send to protected"* — pi runs
+`scripts/set_mode.py`, `config.toml` updates atomically, and the change
+applies on your next dictation (hot-reload). **No restart.**
+
+**One-time override:** *"…without sending"*, *"don't send"*, *"just paste"*
+anywhere in a dictation suppresses the Enter for that one message — in
+every mode — and the phrase is stripped from the text.
+
+### Sessions — one Jarvis, many items
+
+For reviewing a site or reading a doc while noting things down:
+
+```
+"Jarvis, start a new session for AlignMe website"
+  → chime + "Session started: AlignMe website — listening…"
+"reorder the hero section"     ← just speak; no wake word
+"fix the pricing table"        ← each item gets a tick + menu bar count
+"scratch that"                 ← drops the last item
+"that's all"                   ← commit
+  → compiled into TASKS.md as "## AlignMe website (2026-08-16)" with - [ ] items
+```
+
+Speech onset (calibrated silence line + 6 dB) starts each recording; the
+commit hands the list to pi automatically. 60s of silence auto-commits —
+work is never lost.
+
+### Sticky follow-ups — the default
+
+After *any* dictation, whisper stays armed for follow-ups. Fast cadence
+needs no wake word:
+
+```
+"jarvis, show me the tasks"   → delivered
+"now open the homepage file"  → delivered (no jarvis needed)
+"and check the build"         → delivered
+"that's all"                  → disarms back to wake word mode
+```
+
+The **lapse gate**: ~20s of silence and the next utterance needs
+"jarvis" again — a podcast or a phone call can't hijack the mic.
+(`[session] lapse_s`, `[session] sticky = false` to turn the feature off.)
+
+### Pi drop box prefixes
+
+Every dictation is journaled to `~/.local/whisper-vtt/inbox/`. In pi,
+say **"process my dictations"** and the `whisper-vtt` skill files them:
+
+| You say | pi does |
+|---|---|
+| "Jarvis, **task:** fix the deploy timeout" | files it in `TASKS.md` |
+| "Jarvis, **lesson:** never close an audio stream in its callback" | files it for the gardening pipeline |
+| "Jarvis, **journal:** Sharon confirmed Dance $65" | saves it as project context |
+| "Jarvis, **status:** merged testimonials, starting the mic meter" | timestamps a line into `PROGRESS.md` |
+| "Jarvis, **note:** pick up milk" | shows it to you, unfiled |
+| "Jarvis, fix the bug on the homepage, **Enter**" | treats it as a message to pi and sends it |
+
+(Requires the `whisper-vtt` pi skill — see its `references/jarvis-guide.md`
+for the full command reference.)
+
+---
+
+## Configuration
+
+`config.toml` is auto-created on first run with sensible defaults and is
+**hot-reloaded** — edits apply on the next dictation, no restart. Invalid
+values fall back to defaults with a logged warning; a bad config never
+crashes the app. Location: project root (source runs) or
+`~/Library/Application Support/Whisper-VTT/config.toml` (packaged macOS).
+
+```toml
+[hotkey]
+modifiers = []        # any of: "ctrl", "shift", "alt", "win" ("win" = Cmd)
+key = "`"             # a–z, 0–9, f1–f12, backtick, space, tab, enter, escape…
+
+[recording]
+mode = "wake_word"    # "toggle" | "push_to_talk" | "wake_word"
+
+[output]
+mode = "auto_send"    # "clipboard" | "auto_paste" | "auto_send" | "protected"
+paste_target = "pi"   # "frontmost" | "pi" | a process name (macOS)
+
+[vad]
+silence_threshold_ms = 3000   # fallback when the noise floor hasn't calibrated yet
+volume_threshold_db = -50.0   # static fallback threshold (dB)
+
+[wake_word]
+phrase = "jarvis"     # the spoken trigger phrase
+threshold = 1e-20     # detection sensitivity — lower = stricter
+
+[model]
+path = "models/ggml-base.en.bin"   # any whisper.cpp GGML model
+
+[audio]
+device_name = "auto"  # "auto"/"" = mic paired with the current OUTPUT;
+                      # a device name pins that mic
+
+[environment]
+refresh_interval_s = 120      # device-change + calibration tick cadence
+calibration_margin_db = 8.0   # silence line = ambient floor + this margin
+
+[session]
+timeout_s = 60       # idle auto-commit for compile sessions
+sticky = true        # stay armed for follow-ups after every dictation
+lapse_s = 20         # sticky: silence after which "jarvis" is required again
+```
+
+### `[audio] device_name` — output-paired routing
+
+In auto mode whisper uses the mic that belongs to what you're currently
+**hearing** from:
+
+1. Exact name match with the default output device (AirPods out → AirPods mic)
+2. Stem match ("MacBook Pro Speakers" ↔ "MacBook Pro Microphone")
+3. MacBook microphone fallback
+4. OS default input as a last resort
+
+Menu-bar output switches and plug/unplug apply on the next dictation;
+a periodic tick restarts the wake word stream when the paired device
+changes mid-run. Set a device name to pin one permanently.
+
+### `[vad]` — self-calibrating silence detection
+
+While idle, the wake word stream feeds a rolling ambient floor (20th
+percentile of the last 120s). At every recording start the silence
+threshold becomes **floor + `calibration_margin_db`**, clamped to
+[-60, -28] dB. A bedroom fan, AC, or a new room just works — the
+configured `volume_threshold_db` only covers the first seconds after
+launch, before the floor has data.
 
 ---
 
@@ -57,237 +239,35 @@ Every dictation tool either phones home, needs an internet connection, requires 
 ```
 whisper-vtt/
 ├── src/
-│   ├── __main__.py              # Entry point
-│   ├── app_controller.py        # State machine (Idle → Recording → Transcribing)
-│   ├── audio_capture.py         # Microphone capture at 16kHz mono
-│   ├── vad_engine.py            # Voice activity detection (RMS energy)
+│   ├── __main__.py              # Entry point, wiring, single-instance lock
+│   ├── app_controller.py        # State machine + dictation sessions + sticky mode
+│   ├── audio_capture.py         # 16kHz mono capture, per-start device resolution
+│   ├── vad_engine.py            # RMS silence detection (threshold pushed per recording)
+│   ├── speech_onset.py          # Session-mode onset: voice above the silence line
+│   ├── session.py               # Session phrases ("start a new session…", "that's all")
+│   ├── environment.py           # Noise floor + output-paired device resolution + refresh ticks
+│   ├── single_instance.py       # pidfile lock — one whisper, ever
+│   ├── pi_state.py              # Pi handshake state file (~/.local/whisper-vtt/pi-state.json)
+│   ├── output_trigger.py        # "enter" trigger + "without sending" override parsing
+│   ├── dropbox.py               # Dictation journal (pi's inbox)
+│   ├── level_meter.py           # Live mic level + silent-mic watchdog
+│   ├── wake_word.py             # PocketSphinx KWS + onset feed
 │   ├── transcription_engine.py  # whisper.cpp GGML wrapper
-│   ├── output_handler.py        # Clipboard output via win32clipboard
-│   ├── hotkey_listener.py       # Global keyboard hook
-│   ├── wake_word.py             # Wake word detection
-│   ├── system_tray.py           # Tray icon with colored circle indicators
-│   ├── config_manager.py        # TOML config read/write
-│   ├── models.py                # Data models
-│   └── paths.py                 # Portable path resolution
+│   ├── config_manager.py        # TOML load/validate/serialize
+│   ├── models.py                # Enums, dataclasses, deliver-result constants
+│   ├── paths.py                 # Source vs PyInstaller path resolution
+│   └── backends/                # macOS (Quartz/rumps/pbcopy) · Windows (pywin32/pystray)
 ├── scripts/
-│   ├── build.py                 # PyInstaller build script
-│   └── download_model.py        # Model downloader
+│   ├── set_mode.py              # Voice bridge: validate + rewrite [output] mode atomically
+│   ├── pi_handshake.py          # Run by pi: registers its window (stdlib only)
+│   ├── download_model.py        # Model downloader
+│   ├── build.py                 # PyInstaller portable build
+│   ├── diag_mic.py              # Microphone diagnostics
+│   └── runtime_hook.py
 ├── models/                      # GGML model storage
-├── tests/
-├── pyproject.toml
-└── requirements.txt
+├── tests/                       # 320+ tests across all subsystems
+└── config.toml                  # Your settings (gitignored)
 ```
-
----
-
-## Setup
-
-```bash
-# 1. Clone
-git clone https://github.com/magnum-pr/whisper-vtt.git
-cd whisper-vtt
-
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Download a whisper.cpp GGML model (base.en is the default — ~141MB)
-python scripts/download_model.py base.en
-
-# 4. Run
-./run.sh            # or: python -m src
-
-# 5. Press backtick (`) from any application and start speaking
-```
-
-### macOS (primary target)
-
-Two one-time permissions are required — grant both, then relaunch:
-
-1. **Microphone** — System Settings → Privacy & Security → Microphone →
-   enable your terminal app. Without it, macOS hands the app a silent
-   audio stream.
-2. **Accessibility** — System Settings → Privacy & Security →
-   Accessibility → add your terminal app. Required for the global
-   hotkey (Quartz event tap) and for auto-paste.
-
-macOS extras:
-
-- **Wake word** — set `[recording] mode = "wake_word"` to trigger by
-  saying the phrase (`jarvis` by default).
-- **Auto-paste into pi** — `paste_target = "pi"` activates VS Code or
-  Terminal and pastes there (see [Configuration](#configuration)).
-- **Mic selection** — the startup prompt lets you pick an input device
-  and saves it to `[audio] device_name` (e.g. an audio interface with
-  nothing plugged in reads as pure silence — pick the built-in mic).
-
-> **Note on Rust-free setup:** this project needs no Rust toolchain or
-> brew packages — plain `pip install -r requirements.txt` is enough on
-> macOS and Windows.
-
----
-
-## Packaging (portable distribution)
-
-```bash
-python scripts/build.py
-# Output: dist/Whisper-VTT/ — portable folder, no install required
-```
-
----
-
-## Configuration
-
-Whisper VTT reads `config.toml` at startup. The file is auto-created with
-sensible defaults on first run — you never have to touch it. Invalid values
-fall back to defaults with a logged warning; a bad config never crashes the
-app. Config location: next to the app (source runs) or
-`~/Library/Application Support/Whisper-VTT/config.toml` (packaged macOS).
-
-### Full reference
-
-```toml
-[hotkey]
-modifiers = []        # any of: "ctrl", "shift", "alt", "win" ("win" = Cmd on macOS)
-key = "`"             # see Supported keys below
-
-[recording]
-mode = "wake_word"    # "toggle" | "push_to_talk" | "wake_word"
-
-[output]
-mode = "auto_send"    # "clipboard" | "auto_paste" | "auto_send" | "protected"
-paste_target = "pi"     # "frontmost" | "pi" | process name (macOS)
-
-[vad]
-silence_threshold_ms = 3000   # ms of continuous silence before auto-stop
-volume_threshold_db = -50.0   # quieter-than-this counts as silence (dB)
-
-[wake_word]
-phrase = "jarvis"     # the spoken trigger phrase
-threshold = 1e-20     # detection sensitivity — lower = stricter
-
-[model]
-path = "models/ggml-base.en.bin"   # any whisper.cpp GGML (.bin) model
-
-[audio]
-device_name = "MacBook Pro Microphone"  # exact device name; "" = system default
-```
-
-### [hotkey] — the manual trigger
-
-| Key | Default | Notes |
-|---|---|---|
-| `modifiers` | `[]` | Any combination of `"ctrl"`, `"shift"`, `"alt"`, `"win"` (Cmd on macOS) |
-| `key` | `` ` `` | Letters `a`–`z`, digits `0`–`9`, `f1`–`f12`, or names: `` ` `` / `"backtick"`, `"space"`, `"tab"`, `"enter"` / `"return"`, `"escape"` / `"esc"`, `"backspace"`, `"delete"`, `"insert"`, `"home"`, `"end"`, `"pageup"`, `"pagedown"`, `"up"` / `"down"` / `"left"` / `"right"`, `"capslock"`, `"numlock"`, `"scrolllock"`, `"printscreen"`, `"pause"` |
-
-### [recording] — how recording starts
-
-| Mode | Behavior |
-|---|---|
-| `toggle` *(default)* | Press the hotkey to start recording, press again to stop |
-| `push_to_talk` | Hold the hotkey to record, release to stop |
-| `wake_word` | Say the wake phrase to start; silence auto-stop ends it. The hotkey still works as a toggle in this mode |
-
-### [output] — where the transcribed text goes
-
-| Mode | Behavior |
-|---|---|
-| `clipboard` *(default)* | Text lands on the clipboard — you paste manually (Cmd+V / Ctrl+V) |
-| `auto_paste` — *auto-send: off* | Copies to the clipboard **and** pastes into the target app (see `paste_target`); never presses Enter. Safe general-purpose mode |
-| `auto_send` — *auto-send: on* | Pastes and **always presses Enter** — no trigger word, no window guard. Every dictation is a message. Enter follows the paste destination (whatever app received the text receives the Enter) |
-| `protected` | Like `auto_paste`, plus an **Enter press — but only when you end your dictation with the spoken word "Enter"** (stripped from the text) **and** pi's window is positively frontmost. It never sends unless both conditions hold |
-
-**`paste_target` — which app receives the paste (macOS):**
-
-| Value | Behavior |
-|---|---|
-| `"frontmost"` *(default)* | Paste into whatever app is focused (classic behavior) |
-| `"pi"` | Auto-resolve the running pi host (VS Code `"Code"` or `"Terminal"`) and activate it first. If pi is already frontmost, pastes directly without stealing focus |
-| a process name | e.g. `"Terminal"`, `"Code"` — activate that specific process first |
-
-If the target can't be resolved (pi not running, app name not found), the
-paste falls back to the frontmost app — the text is always on the
-clipboard either way.
-
-**The `protected` guard-rail:**
-
-| You say | What happens |
-|---|---|
-| *"fix the bug on the homepage"* | Pastes the text — **no Enter** |
-| *"fix the bug on the homepage enter"* | Pastes *"fix the bug on the homepage"* **and presses Enter** |
-
-- Case-insensitive (`"Enter"`, `"enter"`, `"ENTER"` all work)
-- Trailing punctuation tolerated (*"…enter!"* still sends)
-- Word-boundary aware: *"center"* does **not** trigger
-- **Window guard:** the Enter is only pressed when pi's window is
-  positively frontmost at send time (window title says pi). If it
-  isn't — pi prompt closed, focus elsewhere — the text is still
-  pasted but the Enter is **withheld**, and a notification tells you
-  so. The text stays on the clipboard either way.
-
-⚠️ `auto_paste` / `auto_send` type into the resolved `paste_target` — keep
-that in mind for windows you don't want text injected into. Even if a
-paste misses, the text is always on the clipboard as a fallback.
-
-**Switching modes by voice:** dictate *"change auto_send to protected"*
-(no prefix) — pi runs `scripts/set_mode.py <mode>`, which validates and
-updates `config.toml` atomically. Restart whisper to load the new mode.
-
-### [vad] — silence auto-stop
-
-| Key | Default | Notes |
-|---|---|---|
-| `silence_threshold_ms` | `3000` | Milliseconds of continuous silence before recording auto-stops. Lower = snappier stop, higher = more tolerance for pauses |
-| `volume_threshold_db` | `-50.0` | Sounds quieter than this level count as silence. More negative = quieter threshold = auto-stop fires more readily |
-
-### [wake_word] — voice activation
-
-| Key | Default | Notes |
-|---|---|---|
-| `phrase` | `"jarvis"` | The spoken trigger phrase (pocketsphinx keyphrase) |
-| `threshold` | `1e-20` | Detection sensitivity — lower is stricter (fewer false triggers). `1e-20` is intentionally permissive |
-
-### [model] — the transcription model
-
-| Key | Default | Notes |
-|---|---|---|
-| `path` | `models/ggml-base.en.bin` | Path (relative to the app or absolute) to any whisper.cpp GGML model. Size/speed tradeoffs: `ggml-tiny.en.bin` (~77MB), `ggml-base.en.bin` (~141MB), `ggml-small.en.bin` (~466MB). If the file is missing, the engine falls back to loading the model by name |
-
-### [audio] — microphone selection
-
-| Key | Default | Notes |
-|---|---|---|
-| `device_name` | `""` | Exact device name as shown in the startup list (e.g. `"MacBook Pro Microphone"`). Empty string = system default, chosen silently |
-
----
-
-## Requirements
-
-- Windows or macOS
-- Microphone
-- Python 3.11+ (for development)
-- ~75MB disk for the bundled `tiny.en` model
-
----
-
-## Talking to Jarvis (dictation → pi)
-
-Every transcription lands in a local drop box that the pi coding agent's
-`whisper-vtt` skill reads. A spoken prefix tells pi what to do with it —
-the keywords are natural speech:
-
-| You say | pi does |
-|---|---|
-| "Jarvis, **task:** fix the deploy timeout" | files it in `TASKS.md` |
-| "Jarvis, **lesson:** never close an audio stream in its callback" | files it for the gardening pipeline |
-| "Jarvis, **journal:** Sharon confirmed Dance $65" | saves it as session context |
-| "Jarvis, **status:** merged testimonials, starting mic meter" | timestamps a line into `PROGRESS.md` |
-| "Jarvis, **note:** pick up milk" | shows it to you, unfiled |
-| "Jarvis, fix the bug on the homepage **Enter**" | treats it as a message to pi and sends it |
-
-In pi, say **"process my dictations"** — it reads the drop box, files
-every entry, and reports where each one went. (Requires the
-`whisper-vtt` pi skill — see its `references/jarvis-guide.md` for the
-full command reference.)
 
 ---
 
@@ -295,7 +275,7 @@ full command reference.)
 
 ```bash
 pip install -e ".[dev]"
-pytest -v
+pytest -v          # 320+ passed, Windows-only tests skipped on macOS
 ```
 
 ---

@@ -62,6 +62,8 @@ class AppConfig:
     refresh_interval_s: float = 120.0  # environment refresh ticks (device check)
     calibration_margin_db: float = 8.0  # VAD silence line = noise floor + margin
     session_timeout_s: float = 60.0  # idle auto-commit for dictation sessions
+    sticky_sessions: bool = True  # stay armed for follow-ups after any dictation
+    lapse_s: float = 20.0  # sticky: silence after which the next utterance needs a wake word
 
 
 @dataclass(frozen=True)

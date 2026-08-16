@@ -530,3 +530,57 @@ mode = "clipboard"
 timeout_s = -1
 """))
         assert config.session_timeout_s == 60.0
+
+
+class TestStickyConfig:
+    def test_defaults(self):
+        config = load_config(_write_config_toml("""\
+[output]
+mode = "clipboard"
+"""))
+        assert config.sticky_sessions is True
+        assert config.lapse_s == 20.0
+
+    def test_values_parsed(self):
+        config = load_config(_write_config_toml("""\
+[output]
+mode = "clipboard"
+
+[session]
+timeout_s = 90
+sticky = false
+lapse_s = 45
+"""))
+        assert config.session_timeout_s == 90.0
+        assert config.sticky_sessions is False
+        assert config.lapse_s == 45.0
+
+    def test_invalid_fall_back(self):
+        config = load_config(_write_config_toml("""\
+[output]
+mode = "clipboard"
+
+[session]
+sticky = "yes"
+lapse_s = -3
+"""))
+        assert config.sticky_sessions is True
+        assert config.lapse_s == 20.0
+
+    def test_serialization_round_trip(self):
+        config = AppConfig(
+            hotkey=HotkeyCombo(modifiers=frozenset(), key="`"),
+            recording_mode=RecordingMode.WAKE_WORD,
+            output_mode=OutputMode.AUTO_SEND,
+            silence_threshold_ms=3000,
+            volume_threshold_db=-50.0,
+            model_path=Path("models/ggml-base.en.bin"),
+            sticky_sessions=False,
+            lapse_s=30.0,
+        )
+        toml_str = config_to_toml(config)
+        assert "sticky = false" in toml_str
+        assert "lapse_s = 30" in toml_str
+        reloaded = load_config(_write_config_toml(toml_str))
+        assert reloaded.sticky_sessions is False
+        assert reloaded.lapse_s == 30.0

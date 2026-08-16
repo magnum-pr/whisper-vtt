@@ -249,12 +249,12 @@ class MacOutputHandler:
                 ["osascript", "-e",
                  'tell application "System Events" '
                  'to keystroke "v" using command down'],
-                check=True, capture_output=True, timeout=2)
+                check=True, capture_output=True, timeout=8)
             logger.info("Simulated Cmd+V paste.")
         except subprocess.TimeoutExpired:
-            logger.debug("Paste simulation timed out.")
+            logger.warning("Paste simulation timed out — text is on the clipboard (Cmd+V).")
         except (subprocess.SubprocessError, FileNotFoundError) as e:
-            logger.debug("Paste simulation failed: %s", e)
+            logger.warning("Paste simulation failed: %s — text is on the clipboard (Cmd+V).", e)
 
 
 ICON_SIZE = 64

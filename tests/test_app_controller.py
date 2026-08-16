@@ -824,11 +824,13 @@ class TestRecordingErrors:
 
         controller._start_recording()
 
-        # Only the error notification, not "Recording started"
-        tray.show_notification.assert_called_once()
-        args = tray.show_notification.call_args[0]
-        assert "Microphone error" in args[1]
-        assert controller.status == AppStatus.IDLE  # stays idle
+        # The start chime plays before the mic opens (so it's never
+        # recorded); the mic failure then produces the error notification.
+        calls = tray.show_notification.call_args_list
+        assert calls[0].args[0] == "Whisper VTT"
+        assert calls[0].args[1] == "Recording started"
+        assert "Microphone error" in calls[-1].args[1]
+        assert controller.status == AppStatus.IDLE  # returns to idle
 
     def test_stop_recording_error_returns_to_idle(self):
         from src.audio_capture import AudioCaptureError

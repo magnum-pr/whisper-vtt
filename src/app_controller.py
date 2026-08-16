@@ -323,18 +323,24 @@ class AppController:
         self._vad_engine.reset()
         self._stop_dispatched = False
 
+        # Start-beep BEFORE the mic opens: show_notification waits for
+        # afplay, so the chime is done by the time recording starts.
+        # Playing it after (the old order) recorded the beep itself —
+        # transcriptions came back as "(beep) …" or "[DING] …".
+        self._set_status(AppStatus.RECORDING)
+        self._tray.show_notification("Whisper VTT", "Recording started")
+
         try:
             self._audio_capture.start_recording()
         except AudioCaptureError as e:
             logger.error("Failed to start recording: %s", e)
+            self._set_status(AppStatus.IDLE)
             self._tray.show_notification("Whisper VTT", f"Microphone error: {e}")
             if self._wake_word_listener:
                 self._wake_word_listener.resume()
             return
 
-        self._set_status(AppStatus.RECORDING)
         logger.info("Recording started.")
-        self._tray.show_notification("Whisper VTT", "Recording started")
 
     def _stop_recording(self) -> None:
         """Stop recording and begin transcription."""

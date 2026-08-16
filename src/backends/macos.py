@@ -15,7 +15,7 @@ from typing import Callable, Optional
 
 from PIL import Image, ImageDraw
 
-from src.models import AppStatus, HotkeyCombo, HotkeyEvent, OutputMode
+from src.models import AppStatus, HotkeyCombo, HotkeyEvent, OutputMode, SEND_SKIPPED
 from src.output_trigger import extract_send_intent
 
 logger = logging.getLogger(__name__)
@@ -260,7 +260,18 @@ class MacOutputHandler:
         if self._mode in (OutputMode.AUTO_PASTE, OutputMode.AUTO_SEND):
             delivered_to = self._simulate_paste(self._resolve_target())
         if should_send:
-            self._simulate_enter(delivered_to)
+            # Enter guard: only send when pi's window is positively
+            # frontmost right now. The title is re-read AFTER the paste
+            # so a failed targeted paste (or a focus flip) can't make
+            # the Enter land in the wrong app.
+            if _is_pi_window(_frontmost_window_title()):
+                self._simulate_enter(delivered_to)
+            else:
+                logger.warning(
+                    "Enter withheld: pi's window is not frontmost — "
+                    "text pasted, not sent.")
+                return SEND_SKIPPED
+        return None
 
     def _set_clipboard(self, text: str) -> None:
         try:

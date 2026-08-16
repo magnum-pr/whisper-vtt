@@ -12,7 +12,7 @@ import threading
 from src.audio_capture import AudioCapture, AudioCaptureError
 from src.config_manager import AppConfig, RecordingMode
 from src.backends import HotkeyListener, OutputHandler, SystemTray
-from src.models import AppStatus, AudioBuffer, HotkeyEvent, OutputMode
+from src.models import AppStatus, AudioBuffer, HotkeyEvent, OutputMode, SEND_SKIPPED
 from src.dropbox import append_dictation
 from src.output_trigger import extract_send_intent
 from src.transcription_engine import TranscriptionEngine, TranscriptionError
@@ -306,7 +306,7 @@ class AppController:
     def _deliver_text(self, text: str) -> None:
         preview = text if len(text) <= 50 else text[:50] + "..."
         try:
-            self._output_handler.deliver(text)
+            result = self._output_handler.deliver(text)
         except Exception as e:
             logger.error("Failed to deliver text: %s", e)
             self._tray.show_notification(
@@ -319,3 +319,10 @@ class AppController:
                 f"Transcribed: {preview}",
                 play_sound=False,
             )
+            if result == SEND_SKIPPED:
+                self._tray.show_notification(
+                    "Whisper VTT",
+                    "Auto-send skipped: pi's window isn't frontmost — "
+                    "text is on the clipboard.",
+                    play_sound=True,
+                )

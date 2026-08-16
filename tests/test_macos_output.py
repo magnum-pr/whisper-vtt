@@ -38,8 +38,9 @@ def test_auto_paste_pastes_without_enter(mock_run):
     assert "return" not in scripts[0]
 
 
+@patch("src.backends.macos._frontmost_window_title", return_value="PI Code — alignme")
 @patch("src.backends.macos.subprocess.run")
-def test_auto_send_pastes_then_enters_on_trigger(mock_run):
+def test_auto_send_pastes_then_enters_on_trigger(mock_run, mock_title):
     handler = MacOutputHandler(mode=OutputMode.AUTO_SEND)
     handler.deliver("hello enter")
     scripts = _osascript_scripts(mock_run)
@@ -58,13 +59,15 @@ def test_auto_send_pastes_then_enters_on_trigger(mock_run):
 
 
 @patch("src.backends.macos.subprocess.run")
-@patch("src.backends.macos._frontmost_window_title", return_value="whisper — zsh — 80×24")
+@patch("src.backends.macos._frontmost_window_title",
+       side_effect=["whisper — zsh — 80×24", "PI Code — alignme"])
 @patch("src.backends.macos._frontmost_process_name", return_value="Terminal")
 @patch("src.backends.macos._gui_process_names", return_value=["Terminal", "Code"])
 def test_auto_send_enter_targets_resolved_pi_window(mock_gui, mock_front, mock_title, mock_run):
-    # whisper terminal front → paste resolves Code → Enter must land in Code too
+    # whisper terminal front → paste resolves Code; after activation pi's
+    # window is front → Enter lands in Code too
     handler = MacOutputHandler(mode=OutputMode.AUTO_SEND, paste_target="pi")
-    handler.deliver("hello enter")
+    assert handler.deliver("hello enter") is None
     scripts = _osascript_scripts(mock_run)
     assert len(scripts) == 2
     assert 'tell process "Code"' in scripts[0]
@@ -77,23 +80,28 @@ def test_auto_send_enter_targets_resolved_pi_window(mock_gui, mock_front, mock_t
 @patch("src.backends.macos._frontmost_window_title", return_value="whisper — zsh — 80×24")
 @patch("src.backends.macos._frontmost_process_name", return_value="Terminal")
 @patch("src.backends.macos._gui_process_names", return_value=["Terminal"])
-def test_auto_send_enter_falls_back_to_frontmost(mock_gui, mock_front, mock_title, mock_run):
-    # no resolvable pi host → plain paste + plain Enter
+def test_auto_send_withholds_enter_when_pi_window_not_front(mock_gui, mock_front, mock_title, mock_run):
+    # no resolvable pi host and pi's window never front → paste only,
+    # Enter withheld so the send can't land in the wrong app
+    from src.models import SEND_SKIPPED
+
     handler = MacOutputHandler(mode=OutputMode.AUTO_SEND, paste_target="pi")
-    handler.deliver("hello enter")
+    assert handler.deliver("hello enter") == SEND_SKIPPED
     scripts = _osascript_scripts(mock_run)
-    assert len(scripts) == 2
-    assert 'tell process' not in scripts[1]
-    assert "keystroke return" in scripts[1]
+    assert len(scripts) == 1
+    assert "return" not in scripts[0]
 
 
 @patch("src.backends.macos.subprocess.run")
 @patch("src.backends.macos._frontmost_window_title", return_value="whisper — zsh — 80×24")
 @patch("src.backends.macos._frontmost_process_name", return_value="Terminal")
 @patch("src.backends.macos._gui_process_names", return_value=["Terminal", "Code"])
-def test_auto_send_enter_follows_paste_fallback(mock_gui, mock_front, mock_title, mock_run):
-    # targeted paste fails → plain paste used → Enter must NOT yank to Code
+def test_auto_send_withheld_when_targeted_paste_failed(mock_gui, mock_front, mock_title, mock_run):
+    # targeted paste fails → plain paste; pi's window isn't front →
+    # Enter withheld (no yank-to-Code send after a failed paste)
     import subprocess as sp
+
+    from src.models import SEND_SKIPPED
 
     handler = MacOutputHandler(mode=OutputMode.AUTO_SEND, paste_target="pi")
 
@@ -104,13 +112,11 @@ def test_auto_send_enter_follows_paste_fallback(mock_gui, mock_front, mock_title
         return sp.CompletedProcess(args, 0)
 
     mock_run.side_effect = _fake_run
-    handler.deliver("hello enter")
+    assert handler.deliver("hello enter") == SEND_SKIPPED
     scripts = _osascript_scripts(mock_run)
-    assert len(scripts) == 3  # targeted paste (failed) + plain paste + plain Enter
+    assert len(scripts) == 2  # targeted paste (failed) + plain paste, no Enter
     assert 'tell process' not in scripts[1]
     assert 'keystroke "v"' in scripts[1]
-    assert 'tell process' not in scripts[2]
-    assert "keystroke return" in scripts[2]
 
 
 @patch("src.backends.macos.subprocess.run")

@@ -217,6 +217,11 @@ clipboard either way.
 - Case-insensitive (`"Enter"`, `"enter"`, `"ENTER"` all work)
 - Trailing punctuation tolerated (*"…enter!"* still sends)
 - Word-boundary aware: *"center"* does **not** trigger
+- **Window guard:** the Enter is only pressed when pi's window is
+  positively frontmost at send time (window title says pi). If it
+  isn't — pi prompt closed, focus elsewhere — the text is still
+  pasted but the Enter is **withheld**, and a notification tells you
+  so. The text stays on the clipboard either way.
 
 ⚠️ `auto_paste` / `auto_send` type into the resolved `paste_target` — keep
 that in mind for windows you don't want text injected into. Even if a

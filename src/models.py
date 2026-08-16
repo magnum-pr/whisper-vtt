@@ -20,6 +20,11 @@ class OutputMode(Enum):
     CLIPBOARD = "clipboard"
 
 
+# deliver() result when auto_send pasted the text but withheld Enter
+# because pi's window wasn't positively frontmost.
+SEND_SKIPPED = "send_skipped"
+
+
 class AppStatus(Enum):
     IDLE = "idle"
     RECORDING = "recording"

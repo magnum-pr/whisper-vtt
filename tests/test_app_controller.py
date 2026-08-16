@@ -711,6 +711,39 @@ class TestTranscription:
         output.deliver.assert_not_called()
         assert controller.status == AppStatus.IDLE
 
+    def test_send_skipped_notification(self):
+        from src.models import SEND_SKIPPED
+
+        transcription = MagicMock()
+        transcription.transcribe.return_value = "hello world"
+        output = MagicMock()
+        output.deliver.return_value = SEND_SKIPPED
+        tray = MagicMock()
+
+        controller = AppController(
+            config=make_toggle_config(),
+            tray=tray,
+            hotkey_listener=MagicMock(),
+            audio_capture=MagicMock(),
+            vad_engine=MagicMock(),
+            transcription_engine=transcription,
+            output_handler=output,
+        )
+
+        buffer = AudioBuffer(
+            samples=np.zeros(16000, dtype=np.float32),
+            sample_rate=16000,
+        )
+
+        controller._do_transcribe(buffer)
+
+        tray.show_notification.assert_any_call(
+            "Whisper VTT",
+            "Auto-send skipped: pi's window isn't frontmost — "
+            "text is on the clipboard.",
+            play_sound=True,
+        )
+
     def test_delivery_error_shows_notification(self):
         transcription = MagicMock()
         transcription.transcribe.return_value = "hello"

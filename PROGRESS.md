@@ -1,3 +1,37 @@
+## 2026-08-16 02:40 — Voice loop improvements Q-0…Q-3 (overnight run)
+
+Built while the user slept — the four queued improvement ideas:
+
+**Q-0 Pi presence handshake (idea #1).** New `src/pi_state.py` + `scripts/pi_handshake.py`.
+pi writes `~/.local/whisper-vtt/pi-state.json` (window title fragment, host app,
+timestamp) at session start and per turn. Whisper's `_resolve_target("pi")` now
+consults a FRESH (≤30 min) handshake before falling back to AppleScript heuristics —
+positive evidence replaces guessing. Writer is stdlib-only (runs with plain python3).
+
+**Q-1 On-mode safety net (idea #2).** In auto_send/on mode, Enter is now withheld
+when NO pi host exists (no Code running, no pi terminal window, no fresh handshake).
+Returns `SEND_NO_HOST` → tray notification "no pi host running — text pasted, not sent".
+With a host present, on-mode behavior is unchanged.
+
+**Q-2 Config hot-reload (idea #5).** `AppController` polls config.toml (mtime+size)
+each queue tick (~1s). Changes to output_mode/paste_target apply on the next
+dictation — no whisper restart. `set_mode.py` message updated accordingly.
+Recording-mode/hotkey/model still require restart (documented).
+
+**Q-3 Per-dictation override (idea #9).** `extract_no_send_intent` in
+`src/output_trigger.py`: "paste this without sending", "without sending",
+"don't/dont send", "do not send", "no send", "just paste", "paste only".
+Suppresses Enter for that one dictation in every mode (beats even the spoken
+Enter trigger in protected); phrase stripped from paste AND drop-box journal.
+Returns `SEND_SUPPRESSED` → "Override: pasted without sending."
+
+Also: `paste_target` setters on both backends; override parity in Windows backend.
+
+**Verified:** 234 passed, 42 skipped (Windows-only), 0 failures — up from 192.
+Handshake run live: state file fresh, pi registered as Code / "PI Code — alignme".
+Skill (`whisper-vtt` SKILL.md + jarvis-guide.md) updated: handshake step,
+no-restart config changes, override phrases.
+
 # PROGRESS.md — Whisper VTT
 
 

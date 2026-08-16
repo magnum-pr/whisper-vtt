@@ -25,6 +25,14 @@ class OutputMode(Enum):
 # because pi's window wasn't positively frontmost.
 SEND_SKIPPED = "send_skipped"
 
+# deliver() result when auto_send pasted the text but withheld Enter
+# because no pi host (VS Code / pi terminal) appears to be running.
+SEND_NO_HOST = "send_no_host"
+
+# deliver() result when the spoken override ("paste this without
+# sending") suppressed the Enter for this one dictation.
+SEND_SUPPRESSED = "send_suppressed"
+
 
 class AppStatus(Enum):
     IDLE = "idle"

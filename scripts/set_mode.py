@@ -79,7 +79,7 @@ def set_mode(config_path: Path, mode: str) -> int:
         print(f"Could not write {config_path}: {e}", file=sys.stderr)
         return 2
 
-    print(f"mode set to {mode!r} in {config_path} (restart whisper to load)")
+    print(f"mode set to {mode!r} in {config_path} (hot-reload applies on next dictation)")
     return 0
 
 

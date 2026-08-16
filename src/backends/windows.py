@@ -328,7 +328,7 @@ import logging
 import subprocess
 
 from src.models import OutputMode
-from src.output_trigger import extract_send_intent
+from src.output_trigger import extract_no_send_intent, extract_send_intent
 
 logger = logging.getLogger(__name__)
 
@@ -363,6 +363,14 @@ class WindowsOutputHandler:
     def mode(self, value: OutputMode) -> None:
         self._mode = value
 
+    @property
+    def paste_target(self) -> str:
+        return self._paste_target
+
+    @paste_target.setter
+    def paste_target(self, value: str) -> None:
+        self._paste_target = value
+
     def deliver(self, text: str) -> None:
         """Deliver transcribed text according to the configured mode.
 
@@ -374,6 +382,12 @@ class WindowsOutputHandler:
         """
         if not text:
             return
+
+        # Per-dictation override: spoken "without sending" phrases
+        # suppress the Enter for this one dictation, in every mode.
+        text, suppress_send = extract_no_send_intent(text)
+        if not text:
+            return  # override phrase alone — nothing to paste
 
         # protected guard-rail: Enter fires only when the dictation ends
         # with the spoken word 'Enter' (stripped from the text).
@@ -390,7 +404,7 @@ class WindowsOutputHandler:
 
         if self._mode in (OutputMode.AUTO_PASTE, OutputMode.AUTO_SEND, OutputMode.PROTECTED):
             self._simulate_paste()
-        if self._mode == OutputMode.AUTO_SEND or should_send:
+        if (self._mode == OutputMode.AUTO_SEND or should_send) and not suppress_send:
             self._simulate_enter()
 
     def _set_clipboard(self, text: str) -> None:

@@ -8,13 +8,24 @@ State flow:
 
 import logging
 import threading
+from pathlib import Path
+from typing import Optional
 
 from src.audio_capture import AudioCapture, AudioCaptureError
-from src.config_manager import AppConfig, RecordingMode
+from src.config_manager import AppConfig, RecordingMode, load_config
 from src.backends import HotkeyListener, OutputHandler, SystemTray
-from src.models import AppStatus, AudioBuffer, HotkeyEvent, OutputMode, SEND_SKIPPED
+from src.models import (
+    AppStatus,
+    AudioBuffer,
+    HotkeyEvent,
+    OutputMode,
+    SEND_NO_HOST,
+    SEND_SKIPPED,
+    SEND_SUPPRESSED,
+)
 from src.dropbox import append_dictation
-from src.output_trigger import extract_send_intent
+from src.output_trigger import extract_no_send_intent, extract_send_intent
+from src.paths import PathResolver
 from src.transcription_engine import TranscriptionEngine, TranscriptionError
 from src.vad_engine import VADEngine
 
@@ -39,8 +50,11 @@ class AppController:
         transcription_engine: TranscriptionEngine,
         output_handler: OutputHandler,
         wake_word_listener: object = None,
+        config_path: Optional[Path] = None,
     ):
         self._config = config
+        self._config_path = config_path if config_path is not None else PathResolver.config_path()
+        self._config_signature = self._config_file_signature()
         self._tray = tray
         self._hotkey_listener = hotkey_listener
         self._audio_capture = audio_capture
@@ -120,6 +134,7 @@ class AppController:
         Called from the main event loop. Blocks up to `timeout` seconds
         waiting for work, then processes one transcription if queued.
         """
+        self._reload_config_if_changed()
         buffer = None
         with self._lock:
             if not self._pending_transcribe:
@@ -129,6 +144,56 @@ class AppController:
 
         if buffer is not None:
             self._do_transcribe(buffer)
+
+    # ── Config hot-reload ───────────────────────────────────────────
+
+    def _config_file_signature(self):
+        """(mtime_ns, size) of config.toml, or None when unreadable."""
+        try:
+            st = self._config_path.stat()
+            return (st.st_mtime_ns, st.st_size)
+        except OSError:
+            return None
+
+    def _reload_config_if_changed(self) -> None:
+        """Hot-reload config.toml when it changed on disk.
+
+        Polled from process_queue (once per queue tick, ~1s), so a
+        mode switch — e.g. via the voice bridge scripts/set_mode.py —
+        applies on the next dictation with no whisper restart.
+
+        Propagated live: output_mode and paste_target (the settings the
+        voice bridge edits). Recording-mode, hotkey, and model changes
+        still require a restart — swapping those mid-run risks a wedged
+        mic or tap.
+        """
+        sig = self._config_file_signature()
+        if sig == self._config_signature:
+            return
+        self._config_signature = sig
+        if sig is None:
+            return
+        try:
+            new_config = load_config(self._config_path)
+        except Exception as e:
+            logger.warning("Config hot-reload failed: %s", e)
+            return
+        self._config = new_config
+        output_handler = self._output_handler
+        if hasattr(output_handler, "mode"):
+            output_handler.mode = new_config.output_mode
+        if hasattr(output_handler, "paste_target"):
+            output_handler.paste_target = new_config.paste_target
+        logger.info(
+            "Config hot-reloaded: output_mode=%s, paste_target=%s",
+            new_config.output_mode.value,
+            new_config.paste_target,
+        )
+        self._tray.show_notification(
+            "Whisper VTT",
+            f"Config reloaded — mode: {new_config.output_mode.value}",
+            play_sound=False,
+        )
 
     # ── Status management ──────────────────────────────────────────────
 
@@ -292,6 +357,9 @@ class AppController:
             journal_text = text
             if self._output_handler.mode == OutputMode.PROTECTED:
                 journal_text, _ = extract_send_intent(text)
+            # The no-send override phrase is a command, not dictation —
+            # strip it so the skill never routes it.
+            journal_text, _ = extract_no_send_intent(journal_text)
             if journal_text:
                 append_dictation(journal_text)
             self._deliver_text(text)
@@ -325,4 +393,17 @@ class AppController:
                     "Auto-send skipped: pi's window isn't frontmost — "
                     "text is on the clipboard.",
                     play_sound=True,
+                )
+            elif result == SEND_NO_HOST:
+                self._tray.show_notification(
+                    "Whisper VTT",
+                    "Auto-send skipped: no pi host running — "
+                    "text pasted, not sent.",
+                    play_sound=True,
+                )
+            elif result == SEND_SUPPRESSED:
+                self._tray.show_notification(
+                    "Whisper VTT",
+                    "Override: pasted without sending.",
+                    play_sound=False,
                 )

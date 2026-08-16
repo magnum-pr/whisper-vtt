@@ -80,3 +80,10 @@
 
 - [x] Tests for notifications
   Done when: New tests verify notification calls fire at start/stop/transcribe, preview truncation, build config preservation logic.
+
+## Queued (2026-08-16) — voice loop improvements
+
+- [x] Q-0 Pi presence handshake — `src/pi_state.py` state file (`~/.local/whisper-vtt/pi-state.json`) + `scripts/pi_handshake.py` writer; pi registers its window title + host at session start and per turn. Whisper resolves the pi target from fresh handshake state before falling back to AppleScript heuristics. Done when: pi writes state (fresh ≤30 min); `_resolve_target("pi")` returns the recorded host; stale/missing falls back to legacy detection.
+- [x] Q-1 On-mode safety net — in `on`/auto_send mode, when no pi host is running (no Code/pi window, no fresh handshake), withhold Enter + notify instead of sending into frontmost app. Done when: tests cover pi-not-running in on-mode; Enter withheld; notification shown. → `SEND_NO_HOST`
+- [x] Q-2 Config hot-reload — watch config.toml (mtime+size, ~1s poll in process_queue); mode changes apply on next dictation, no whisper restart. Done when: editing config.toml changes output mode without restart; tests pass. Propagates output_mode + paste_target live.
+- [x] Q-3 Per-dictation mode override — spoken phrase ("paste this without sending" / "don't send" / "just paste"…) suppresses Enter for that one dictation only; phrase stripped from paste + journal. Done when: phrase detection skips Enter for a single dictation; next dictation behaves per config. → `SEND_SUPPRESSED`

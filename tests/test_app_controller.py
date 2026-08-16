@@ -982,3 +982,190 @@ class TestWakeWordStartOrdering:
         controller.start()
 
         wake.start.assert_called_once()
+
+
+# ── Config hot-reload ───────────────────────────────────────────────
+
+
+CONFIG_TOML = """\
+[output]
+mode = "auto_send"
+paste_target = "pi"
+"""
+
+CONFIG_TOML_CHANGED = """\
+[output]
+mode = "protected"
+paste_target = "frontmost"
+"""
+
+
+def _write_config(path, body):
+    path.write_text(body, encoding="utf-8")
+
+
+class TestConfigHotReload:
+    def test_process_queue_reloads_changed_config(self, tmp_path):
+        cfg = tmp_path / "config.toml"
+        _write_config(cfg, CONFIG_TOML)
+        output = MagicMock()
+        tray = MagicMock()
+
+        controller = AppController(
+            config=make_toggle_config(),
+            tray=tray,
+            hotkey_listener=MagicMock(),
+            audio_capture=MagicMock(),
+            vad_engine=MagicMock(),
+            transcription_engine=MagicMock(),
+            output_handler=output,
+            config_path=cfg,
+        )
+
+        _write_config(cfg, CONFIG_TOML_CHANGED)
+        controller.process_queue(timeout=0)
+
+        assert controller._config.output_mode == OutputMode.PROTECTED
+        assert controller._config.paste_target == "frontmost"
+        output.mode = OutputMode.PROTECTED  # was set by controller
+        assert output.mode == OutputMode.PROTECTED
+        assert output.paste_target == "frontmost"
+
+    def test_unchanged_config_is_not_reloaded(self, tmp_path):
+        cfg = tmp_path / "config.toml"
+        _write_config(cfg, CONFIG_TOML)
+        output = MagicMock()
+        tray = MagicMock()
+
+        controller = AppController(
+            config=make_toggle_config(),
+            tray=tray,
+            hotkey_listener=MagicMock(),
+            audio_capture=MagicMock(),
+            vad_engine=MagicMock(),
+            transcription_engine=MagicMock(),
+            output_handler=output,
+            config_path=cfg,
+        )
+
+        controller.process_queue(timeout=0)
+        output.mode = "sentinel"  # must not be touched
+        output.paste_target = "sentinel"
+
+        controller.process_queue(timeout=0)
+        assert output.mode == "sentinel"
+        assert output.paste_target == "sentinel"
+
+    def test_missing_config_file_ignored(self, tmp_path):
+        cfg = tmp_path / "nope.toml"
+        output = MagicMock()
+        controller = AppController(
+            config=make_toggle_config(),
+            tray=MagicMock(),
+            hotkey_listener=MagicMock(),
+            audio_capture=MagicMock(),
+            vad_engine=MagicMock(),
+            transcription_engine=MagicMock(),
+            output_handler=output,
+            config_path=cfg,
+        )
+        controller.process_queue(timeout=0)
+        assert controller._config.output_mode == OutputMode.CLIPBOARD
+
+
+# ── Journal override stripping ──────────────────────────────────────
+
+
+class TestJournalNoSendOverride:
+    def test_journal_strips_no_send_phrase(self):
+        transcription = MagicMock()
+        transcription.transcribe.return_value = "task: clean inbox without sending"
+        output = MagicMock()
+        output.mode = OutputMode.AUTO_SEND
+
+        controller = AppController(
+            config=make_toggle_config(),
+            tray=MagicMock(),
+            hotkey_listener=MagicMock(),
+            audio_capture=MagicMock(),
+            vad_engine=MagicMock(),
+            transcription_engine=transcription,
+            output_handler=output,
+        )
+
+        buffer = AudioBuffer(
+            samples=np.zeros(16000, dtype=np.float32),
+            sample_rate=16000,
+        )
+
+        with patch("src.app_controller.append_dictation") as append:
+            controller._do_transcribe(buffer)
+
+        append.assert_called_once_with("task: clean inbox")
+
+    def test_journal_override_phrase_alone_not_journaled(self):
+        transcription = MagicMock()
+        transcription.transcribe.return_value = "just paste"
+        output = MagicMock()
+        output.mode = OutputMode.AUTO_PASTE
+
+        controller = AppController(
+            config=make_toggle_config(),
+            tray=MagicMock(),
+            hotkey_listener=MagicMock(),
+            audio_capture=MagicMock(),
+            vad_engine=MagicMock(),
+            transcription_engine=transcription,
+            output_handler=output,
+        )
+
+        buffer = AudioBuffer(
+            samples=np.zeros(16000, dtype=np.float32),
+            sample_rate=16000,
+        )
+
+        with patch("src.app_controller.append_dictation") as append:
+            controller._do_transcribe(buffer)
+
+        append.assert_not_called()
+
+
+# ── Delivery result notifications ───────────────────────────────────
+
+
+class TestDeliveryResultNotifications:
+    def _controller(self):
+        return AppController(
+            config=make_toggle_config(),
+            tray=MagicMock(),
+            hotkey_listener=MagicMock(),
+            audio_capture=MagicMock(),
+            vad_engine=MagicMock(),
+            transcription_engine=MagicMock(),
+            output_handler=MagicMock(),
+        )
+
+    def test_no_host_result_notifies(self):
+        from src.models import SEND_NO_HOST
+
+        controller = self._controller()
+        controller._output_handler.deliver.return_value = SEND_NO_HOST
+        controller._deliver_text("hello")
+        controller._tray.show_notification.assert_any_call(
+            "Whisper VTT",
+            "Auto-send skipped: no pi host running — "
+            "text pasted, not sent.",
+            play_sound=True,
+        )
+
+    def test_suppressed_result_notifies(self):
+        from src.models import SEND_SUPPRESSED
+
+        controller = self._controller()
+        controller._output_handler.deliver.return_value = SEND_SUPPRESSED
+        controller._deliver_text("hello")
+        controller._tray.show_notification.assert_any_call(
+            "Whisper VTT",
+            "Override: pasted without sending.",
+            play_sound=False,
+        )

@@ -15,8 +15,17 @@ from typing import Callable, Optional
 
 from PIL import Image, ImageDraw
 
-from src.models import AppStatus, HotkeyCombo, HotkeyEvent, OutputMode, SEND_SKIPPED
-from src.output_trigger import extract_send_intent
+from src.models import (
+    AppStatus,
+    HotkeyCombo,
+    HotkeyEvent,
+    OutputMode,
+    SEND_NO_HOST,
+    SEND_SKIPPED,
+    SEND_SUPPRESSED,
+)
+from src.output_trigger import extract_no_send_intent, extract_send_intent
+from src.pi_state import PI_STATE_MAX_AGE_S, pi_state_fresh, read_pi_state
 
 logger = logging.getLogger(__name__)
 
@@ -241,9 +250,23 @@ class MacOutputHandler:
     def mode(self, value: OutputMode) -> None:
         self._mode = value
 
+    @property
+    def paste_target(self) -> str:
+        return self._paste_target
+
+    @paste_target.setter
+    def paste_target(self, value: str) -> None:
+        self._paste_target = value
+
     def deliver(self, text: str) -> None:
         if not text:
             return
+
+        # Per-dictation override: spoken "without sending" phrases
+        # suppress the Enter for this one dictation, in every mode.
+        text, suppress_send = extract_no_send_intent(text)
+        if not text:
+            return  # override phrase alone — nothing to paste
 
         # protected guard-rail: Enter fires only when the dictation ends
         # with the spoken word 'Enter' (stripped from the text).
@@ -261,10 +284,21 @@ class MacOutputHandler:
             OutputMode.AUTO_PASTE, OutputMode.AUTO_SEND, OutputMode.PROTECTED
         ):
             delivered_to = self._simulate_paste(self._resolve_target())
+
+        if suppress_send:
+            # Override wins over every send path — trigger and on-mode alike.
+            logger.info("Override: send suppressed for this dictation.")
+            return SEND_SUPPRESSED
         if self._mode == OutputMode.AUTO_SEND:
-            # on: always send — Enter follows the paste destination.
-            # No trigger word, no window guard; whatever app received
-            # the text receives the Enter.
+            # on-mode safety net: never fire Enter into a random app when
+            # no pi host is running at all (no Code, no pi terminal, no
+            # fresh handshake state). With a host present, behavior is
+            # unchanged — Enter follows the paste destination.
+            if not _pi_host_present():
+                logger.warning(
+                    "Enter withheld: no pi host running — "
+                    "text pasted, not sent.")
+                return SEND_NO_HOST
             self._simulate_enter(delivered_to)
             return None
         if should_send:
@@ -301,7 +335,17 @@ class MacOutputHandler:
             return None
         front = _frontmost_process_name()
         if target == "pi":
-            # Only skip the focus yank on POSITIVE evidence that pi's
+            # Handshake first: a fresh pi-state file with a matching
+            # window gives POSITIVE evidence of where pi lives — better
+            # than any heuristic below.
+            host = _pi_process_from_state()
+            if host is not None:
+                if front == host and _is_pi_window(
+                        _frontmost_window_title()):
+                    return None  # pi already front — no focus yank
+                return host
+            # Legacy heuristics (kept as fallback for stale handshakes):
+            # only skip the focus yank on POSITIVE evidence that pi's
             # window is already frontmost. Process names are too coarse:
             # the frontmost Terminal is often whisper's own, not pi's
             # ("whisper" even contains "pi" as a substring — word
@@ -424,6 +468,70 @@ PI_TITLE_RE = re.compile(r"\bpi\b", re.IGNORECASE)
 def _is_pi_window(title: str) -> bool:
     """True when a window title positively identifies pi's window."""
     return bool(title) and bool(PI_TITLE_RE.search(title))
+
+
+def _window_titles(process: str) -> list[str]:
+    """Window titles of a GUI process, or [] on failure."""
+    try:
+        out = subprocess.run(
+            ["osascript", "-e",
+             'tell application "System Events" to get name of every '
+             f'window of process "{process}"'],
+            capture_output=True, text=True, timeout=8)
+        return [t.strip() for t in out.stdout.split(",") if t.strip()]
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return []
+
+
+def _pi_process_from_state() -> Optional[str]:
+    """Resolve pi's host process from the handshake state file.
+
+    Returns the process name when a fresh handshake exists AND its
+    recorded window title fragment matches an open window of a known
+    pi host app. Returns None when the handshake is stale, missing, or
+    its window can't be found — callers fall back to legacy heuristics.
+    """
+    state = read_pi_state()
+    if not state or not pi_state_fresh(state):
+        return None
+    fragment = (state.get("window_title_fragment") or "").strip()
+    host = (state.get("host_app") or "").strip()
+    candidates = [host] if host else ["Code", "Terminal", "iTerm2"]
+    for process in candidates:
+        titles = _window_titles(process)
+        if not fragment:
+            # No title recorded — weak positive: the app named in the
+            # handshake has at least one window open.
+            if titles:
+                return process
+            continue
+        if any(fragment.lower() in title.lower() for title in titles):
+            return process
+    return None
+
+
+def _pi_host_present() -> bool:
+    """True when a pi host plausibly exists on this machine.
+
+    Positive evidence, strongest first:
+    1. A fresh handshake state file (pi wrote it recently).
+    2. VS Code is running — pi's usual home.
+    3. A terminal window with a pi-identifying title is open.
+
+    Used by the on-mode safety net to withhold Enter when NO pi host
+    exists, so auto_send never fires Enter into a random app.
+    """
+    if pi_state_fresh():
+        return True
+    gui = _gui_process_names()
+    if "Code" in gui:
+        return True
+    for process in ("Terminal", "iTerm2"):
+        if process in gui and any(
+            _is_pi_window(title) for title in _window_titles(process)
+        ):
+            return True
+    return False
 
 
 def _frontmost_window_title() -> str:

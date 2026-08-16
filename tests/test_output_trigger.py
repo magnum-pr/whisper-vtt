@@ -6,7 +6,7 @@ word 'Enter' (case-insensitive, optional trailing punctuation) means
 text. Otherwise paste-only.
 """
 
-from src.output_trigger import extract_send_intent
+from src.output_trigger import extract_no_send_intent, extract_send_intent
 
 
 def test_trigger_at_end_is_detected_and_stripped():
@@ -55,3 +55,66 @@ def test_trigger_alone():
     text, send = extract_send_intent("Enter")
     assert text == ""
     assert send is True
+
+
+# ── No-send override ────────────────────────────────────────────────
+
+
+def test_override_phrase_at_end_detected_and_stripped():
+    text, suppress = extract_no_send_intent("show me the tasks without sending")
+    assert text == "show me the tasks"
+    assert suppress is True
+
+
+def test_override_phrase_at_start_detected_and_stripped():
+    text, suppress = extract_no_send_intent("paste this without sending show me the tasks")
+    assert text == "show me the tasks"
+    assert suppress is True
+
+
+def test_override_dont_send_variant():
+    text, suppress = extract_no_send_intent("fix the bug don't send")
+    assert text == "fix the bug"
+    assert suppress is True
+
+
+def test_override_dont_without_apostrophe():
+    text, suppress = extract_no_send_intent("fix the bug dont send")
+    assert text == "fix the bug"
+    assert suppress is True
+
+
+def test_override_without_enter_variant():
+    text, suppress = extract_no_send_intent("deploy it without enter")
+    assert text == "deploy it"
+    assert suppress is True
+
+
+def test_override_just_paste_variant():
+    text, suppress = extract_no_send_intent("just paste the report")
+    assert text == "the report"
+    assert suppress is True
+
+
+def test_override_phrase_only():
+    text, suppress = extract_no_send_intent("paste this without sending")
+    assert text == ""
+    assert suppress is True
+
+
+def test_override_absent():
+    text, suppress = extract_no_send_intent("send the report to the team")
+    assert text == "send the report to the team"
+    assert suppress is False
+
+
+def test_override_case_insensitive():
+    text, suppress = extract_no_send_intent("Without Sending deploy")
+    assert text == "deploy"
+    assert suppress is True
+
+
+def test_override_strips_trailing_punctuation_leftover():
+    text, suppress = extract_no_send_intent("fix the bug, don't send")
+    assert text == "fix the bug"
+    assert suppress is True

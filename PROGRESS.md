@@ -1,3 +1,10 @@
+## 2026-08-16 19:15 — Cleanup pass (pushed `4bd494a`)
+
+- Fixed: macos tray missing notify= param (item ticks raised TypeError);
+  mic-level menu item + silent-mic watchdog rewired (were dead + broken).
+- Removed: backends/base.py, DeviceInfo, set_error_callback, dead flag,
+  unused imports; simplified wake word consecutive-hit machinery.
+- 318 passed / 43 skipped / 0 failures. Restart whisper to pick up.
 ## 2026-08-16 18:45 — Sticky follow-up mode + README refresh (pushed `d87ee15`)
 
 **Sticky sessions (default on).** After any plain dictation, whisper stays armed

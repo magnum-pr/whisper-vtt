@@ -94,8 +94,6 @@ class AppController:
         self._session: Optional[SessionState] = None
         self._session_last_activity: float = 0.0
 
-        # Push-to-talk tracking
-        self._push_to_talk_active: bool = False
 
     # ── Public API ─────────────────────────────────────────────────────
 

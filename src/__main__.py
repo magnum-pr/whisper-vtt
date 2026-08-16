@@ -8,7 +8,6 @@ import logging
 import signal
 import sys
 import traceback
-from pathlib import Path
 from typing import Optional
 
 from src.app_controller import AppController
@@ -44,10 +43,6 @@ class _Term:
     GRAY   = "\033[90m"
     WHITE  = "\033[97m"
     ORANGE = "\033[93m"  # bright yellow — closest supported color to orange
-
-    @staticmethod
-    def divider(char: str = "─", width: int = 62) -> str:
-        return _Term.D + char * width + _Term.R
 
     @staticmethod
     def header(
@@ -515,7 +510,6 @@ def main() -> None:
         # Windows: main thread runs queue, tray/hotkey on daemon threads
         controller.start()
         try:
-            import time
             while True:
                 controller.process_queue(timeout=1.0)
         except KeyboardInterrupt:

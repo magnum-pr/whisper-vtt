@@ -84,13 +84,6 @@ class AudioBuffer:
         return len(self.samples) / self.sample_rate
 
 
-@dataclass(frozen=True)
-class DeviceInfo:
-    name: str
-    sample_rate: int
-    channels: int
-    is_available: bool
-
 
 @dataclass
 class ClipboardContents:

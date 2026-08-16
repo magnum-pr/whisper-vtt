@@ -51,7 +51,6 @@ class AudioCapture:
         self._stream: Optional[object] = None
         self._chunks: list[np.ndarray] = []
         self._chunk_callback: Optional[Callable[[np.ndarray], None]] = None
-        self._error_callback: Optional[Callable[[str], None]] = None
         self._is_recording: bool = False
 
     @property
@@ -61,10 +60,6 @@ class AudioCapture:
     def set_chunk_callback(self, callback: Callable[[np.ndarray], None]) -> None:
         """Set callback for each audio chunk (e.g., VAD processing)."""
         self._chunk_callback = callback
-
-    def set_error_callback(self, callback: Callable[[str], None]) -> None:
-        """Set callback for capture errors."""
-        self._error_callback = callback
 
     def start_recording(self) -> None:
         """Begin recording from the default microphone.
@@ -167,10 +162,7 @@ class AudioCapture:
     ) -> None:
         """Internal PortAudio callback — called from a high-priority audio thread."""
         if status:
-            msg = f"Audio capture status: {status}"
-            logger.warning(msg)
-            if self._error_callback:
-                self._error_callback(msg)
+            logger.warning("Audio capture status: %s", status)
 
         # Copy to avoid buffer reuse issues
         chunk = indata[:, 0].copy() if indata.ndim > 1 else indata.copy()

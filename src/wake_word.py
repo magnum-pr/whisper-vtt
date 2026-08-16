@@ -214,19 +214,13 @@ class WakeWordListener:
         COOLDOWN_DURATION_MS = 2000
         COOLDOWN_FRAMES = COOLDOWN_DURATION_MS // 100  # 100ms per frame
 
-        # Require N consecutive frames with a hypothesis before firing.
-        # Single-frame noise spikes won't trigger; real speech spans
-        # multiple frames at 100ms/frame.
-        consecutive_hits = 0
-        CONSECUTIVE_REQUIRED = 1
-
         # Keep utterance open across frames so the decoder sees
         # enough audio to match multi-syllable keywords (~500ms).
         self._decoder.start_utt()
         frame_count = 0
 
         def audio_callback(indata, frames, time_info, status):
-            nonlocal cooldown_frames, frame_count, consecutive_hits
+            nonlocal cooldown_frames, frame_count
 
             if not self._running:
                 raise sd.CallbackStop
@@ -285,30 +279,25 @@ class WakeWordListener:
 
             hyp = self._decoder.hyp()
 
-            # During cooldown, ignore everything and reset consecutive counter
+            # During cooldown, ignore everything
             if cooldown_frames > 0:
                 cooldown_frames -= 1
                 return
 
             if hyp is not None:
-                consecutive_hits += 1
-                if consecutive_hits >= CONSECUTIVE_REQUIRED:
-                    logger.info(
-                        "Wake word detected: '%s' -> '%s'",
-                        self._keyword,
-                        hyp.hypstr,
-                    )
-                    cooldown_frames = COOLDOWN_FRAMES
-                    consecutive_hits = 0
-                    if self._on_detected and not self._dispatching:
-                        self._dispatching = True
-                        threading.Thread(
-                            target=self._dispatch_detected,
-                            daemon=True,
-                            name="wake-word-dispatch",
-                        ).start()
-            else:
-                consecutive_hits = 0
+                logger.info(
+                    "Wake word detected: '%s' -> '%s'",
+                    self._keyword,
+                    hyp.hypstr,
+                )
+                cooldown_frames = COOLDOWN_FRAMES
+                if self._on_detected and not self._dispatching:
+                    self._dispatching = True
+                    threading.Thread(
+                        target=self._dispatch_detected,
+                        daemon=True,
+                        name="wake-word-dispatch",
+                    ).start()
 
         while self._running:
             if self._paused:

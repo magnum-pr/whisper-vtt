@@ -8,7 +8,6 @@ from src.models import (
     AppStatus,
     AudioBuffer,
     ClipboardContents,
-    DeviceInfo,
     HotkeyCombo,
     HotkeyEvent,
     OutputMode,
@@ -83,18 +82,6 @@ class TestAudioBuffer:
         assert buf.sample_rate == 16000
         assert buf.channels == 1
 
-
-class TestDeviceInfo:
-    def test_creation(self):
-        info = DeviceInfo(
-            name="Microphone",
-            sample_rate=44100,
-            channels=2,
-            is_available=True,
-        )
-        assert info.name == "Microphone"
-        assert info.sample_rate == 44100
-        assert info.is_available is True
 
 
 class TestClipboardContents:

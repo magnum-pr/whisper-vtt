@@ -11,7 +11,7 @@ import re
 import subprocess
 import threading
 import time
-from typing import Callable, Optional
+from typing import Optional
 
 from PIL import Image, ImageDraw
 
@@ -25,7 +25,7 @@ from src.models import (
     SEND_SUPPRESSED,
 )
 from src.output_trigger import extract_no_send_intent, extract_send_intent
-from src.pi_state import PI_STATE_MAX_AGE_S, pi_state_fresh, read_pi_state
+from src.pi_state import pi_state_fresh, read_pi_state
 
 logger = logging.getLogger(__name__)
 
@@ -583,6 +583,9 @@ class MacSystemTray:
         self._session_text: Optional[str] = ""
         self._on_exit = None
         self._app = None
+        # Mic-level menu item + silent-mic watchdog state (wired in start()).
+        self._mic_item = None
+        self._silent_alerted = False
 
     @property
     def status(self) -> AppStatus:
@@ -610,17 +613,19 @@ class MacSystemTray:
         *,
         play_sound: bool = True,
         sound: Optional[str] = None,
+        notify: bool = True,
     ) -> None:
-        try:
-            esc_title = title.replace('"', '\\"')
-            esc_msg = message.replace('"', '\\"')
-            subprocess.run(
-                ["osascript", "-e",
-                 f'display notification "{esc_msg}" '
-                 f'with title "{esc_title}"'],
-                capture_output=True, timeout=3)
-        except Exception as e:
-            logger.debug("Notification failed: %s", e)
+        if notify:
+            try:
+                esc_title = title.replace('"', '\\"')
+                esc_msg = message.replace('"', '\\"')
+                subprocess.run(
+                    ["osascript", "-e",
+                     f'display notification "{esc_msg}" '
+                     f'with title "{esc_title}"'],
+                    capture_output=True, timeout=3)
+            except Exception as e:
+                logger.debug("Notification failed: %s", e)
         if play_sound:
             try:
                 path = sound or "/System/Library/Sounds/Glass.aiff"
@@ -649,14 +654,25 @@ class MacSystemTray:
                 super().__init__(**kwargs)
                 app_self._tray_ref = tray_ref
 
-            @rumps.clicked("Exit")
-            def on_exit(app_self, _):
-                if app_self._tray_ref._on_exit:
-                    app_self._tray_ref._on_exit()
-                rumps.quit_application()
+        # Mic-level menu item (updated by the meter timer below) + Exit.
+        self._mic_item = rumps.MenuItem("Mic: —")
+        exit_item = rumps.MenuItem(
+            "Exit",
+            callback=lambda _: (
+                tray_ref._on_exit() if tray_ref._on_exit else None,
+                rumps.quit_application(),
+            ),
+        )
 
         self._app = WhisperVTTApp(
-            name=self._title, title="", icon=icon_path, quit_button=None)
+            name=self._title,
+            title="",
+            icon=icon_path,
+            menu=[self._mic_item, None, exit_item],
+            quit_button=None,
+        )
+        self._meter_timer = rumps.Timer(self._update_meter, 1.0)
+        self._meter_timer.start()
         try:
             self._app.run()
         except Exception as e:

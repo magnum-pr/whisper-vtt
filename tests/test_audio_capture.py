@@ -57,16 +57,6 @@ class TestAudioCaptureCallbacks:
         cap.set_chunk_callback(cb)
         assert cap._chunk_callback is not None
 
-    def test_error_callback_set(self):
-        cap = AudioCapture()
-        errors = []
-
-        def cb(msg):
-            errors.append(msg)
-
-        cap.set_error_callback(cb)
-        assert cap._error_callback is not None
-
 
 class TestAudioCaptureStopErrors:
     def test_stop_when_not_recording_raises(self):

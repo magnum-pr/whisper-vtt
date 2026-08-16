@@ -1,6 +1,6 @@
 """Tests for AppController state machine."""
 
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 
@@ -539,6 +539,93 @@ class TestTranscription:
 
         output.deliver.assert_called_once_with("hello world")
         assert controller.status == AppStatus.IDLE
+
+    def test_journal_strips_send_trigger_in_auto_send(self):
+        from src.models import OutputMode
+
+        transcription = MagicMock()
+        transcription.transcribe.return_value = "task: fix deploy enter"
+        output = MagicMock()
+        output.mode = OutputMode.AUTO_SEND
+
+        controller = AppController(
+            config=make_toggle_config(),
+            tray=MagicMock(),
+            hotkey_listener=MagicMock(),
+            audio_capture=MagicMock(),
+            vad_engine=MagicMock(),
+            transcription_engine=transcription,
+            output_handler=output,
+        )
+
+        buffer = AudioBuffer(
+            samples=np.zeros(16000, dtype=np.float32),
+            sample_rate=16000,
+        )
+
+        with patch("src.app_controller.append_dictation") as append:
+            controller._do_transcribe(buffer)
+
+        # journal gets the trigger stripped; deliver gets the raw text
+        append.assert_called_once_with("task: fix deploy")
+        output.deliver.assert_called_once_with("task: fix deploy enter")
+
+    def test_trigger_only_dictation_not_journaled(self):
+        from src.models import OutputMode
+
+        transcription = MagicMock()
+        transcription.transcribe.return_value = "Enter."
+        output = MagicMock()
+        output.mode = OutputMode.AUTO_SEND
+
+        controller = AppController(
+            config=make_toggle_config(),
+            tray=MagicMock(),
+            hotkey_listener=MagicMock(),
+            audio_capture=MagicMock(),
+            vad_engine=MagicMock(),
+            transcription_engine=transcription,
+            output_handler=output,
+        )
+
+        buffer = AudioBuffer(
+            samples=np.zeros(16000, dtype=np.float32),
+            sample_rate=16000,
+        )
+
+        with patch("src.app_controller.append_dictation") as append:
+            controller._do_transcribe(buffer)
+
+        append.assert_not_called()
+
+    def test_journal_keeps_enter_in_auto_paste(self):
+        from src.models import OutputMode
+
+        transcription = MagicMock()
+        transcription.transcribe.return_value = "say enter"
+        output = MagicMock()
+        output.mode = OutputMode.AUTO_PASTE
+
+        controller = AppController(
+            config=make_toggle_config(),
+            tray=MagicMock(),
+            hotkey_listener=MagicMock(),
+            audio_capture=MagicMock(),
+            vad_engine=MagicMock(),
+            transcription_engine=transcription,
+            output_handler=output,
+        )
+
+        buffer = AudioBuffer(
+            samples=np.zeros(16000, dtype=np.float32),
+            sample_rate=16000,
+        )
+
+        with patch("src.app_controller.append_dictation") as append:
+            controller._do_transcribe(buffer)
+
+        # in non-send modes 'enter' is dictation content, not a command
+        append.assert_called_once_with("say enter")
 
     def test_transcription_preview_truncated(self):
         transcription = MagicMock()

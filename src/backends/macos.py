@@ -256,10 +256,11 @@ class MacOutputHandler:
                 logger.info("Send trigger detected — pressing Enter after paste.")
 
         self._set_clipboard(text)
+        delivered_to = None
         if self._mode in (OutputMode.AUTO_PASTE, OutputMode.AUTO_SEND):
-            self._simulate_paste()
+            delivered_to = self._simulate_paste(self._resolve_target())
         if should_send:
-            self._simulate_enter()
+            self._simulate_enter(delivered_to)
 
     def _set_clipboard(self, text: str) -> None:
         try:
@@ -303,8 +304,15 @@ class MacOutputHandler:
         gui = _gui_process_names()
         return target if target in gui else None
 
-    def _simulate_paste(self) -> None:
-        target = self._resolve_target()
+    def _simulate_paste(self, target: Optional[str]) -> Optional[str]:
+        """Paste into the resolved target; falls back to frontmost.
+
+        Returns the process that actually received the paste: the
+        target when the targeted script succeeded, None when the
+        paste went to the frontmost app (no target, or the targeted
+        script failed). Enter must follow this — not the resolved
+        target — so a failed targeted paste never yanks focus.
+        """
         if target is not None:
             script = (
                 'tell application "System Events"\n'
@@ -319,7 +327,7 @@ class MacOutputHandler:
                     ["osascript", "-e", script],
                     check=True, capture_output=True, timeout=8)
                 logger.info("Activated %s and simulated Cmd+V paste.", target)
-                return
+                return target
             except subprocess.TimeoutExpired:
                 logger.warning("Targeted paste timed out — falling back to plain paste.")
             except (subprocess.SubprocessError, FileNotFoundError) as e:
@@ -337,9 +345,34 @@ class MacOutputHandler:
             logger.warning("Paste simulation timed out — text is on the clipboard (Cmd+V).")
         except (subprocess.SubprocessError, FileNotFoundError) as e:
             logger.warning("Paste simulation failed: %s — text is on the clipboard (Cmd+V).", e)
+        return None
 
-    def _simulate_enter(self) -> None:
-        """Press Return in the frontmost app (sends the message in pi)."""
+    def _simulate_enter(self, target: Optional[str]) -> None:
+        """Press Return where the text was pasted.
+
+        Targets the same process the paste landed in (when known) so
+        the send can't land in a different app than the text.
+        """
+        if target is not None:
+            script = (
+                'tell application "System Events"\n'
+                f'tell process "{target}"\n'
+                'set frontmost to true\n'
+                'keystroke return\n'
+                'end tell\n'
+                'end tell'
+            )
+            try:
+                subprocess.run(
+                    ["osascript", "-e", script],
+                    check=True, capture_output=True, timeout=8)
+                logger.info("Simulated Return key in %s.", target)
+                return
+            except subprocess.TimeoutExpired:
+                logger.warning("Targeted Enter timed out — falling back to frontmost.")
+            except (subprocess.SubprocessError, FileNotFoundError) as e:
+                logger.warning("Targeted Enter failed (%s) — falling back to frontmost.", e)
+
         try:
             subprocess.run(
                 ["osascript", "-e",

@@ -12,8 +12,9 @@ import threading
 from src.audio_capture import AudioCapture, AudioCaptureError
 from src.config_manager import AppConfig, RecordingMode
 from src.backends import HotkeyListener, OutputHandler, SystemTray
-from src.models import AppStatus, AudioBuffer, HotkeyEvent
+from src.models import AppStatus, AudioBuffer, HotkeyEvent, OutputMode
 from src.dropbox import append_dictation
+from src.output_trigger import extract_send_intent
 from src.transcription_engine import TranscriptionEngine, TranscriptionError
 from src.vad_engine import VADEngine
 
@@ -286,7 +287,13 @@ class AppController:
             # Drop box side channel — every transcription is journaled for
             # pi's whisper-vtt skill (tasks, lessons, journal, status).
             # Never blocks or raises; the paste/send path is primary.
-            append_dictation(text)
+            # In auto_send mode the spoken 'Enter' trigger is a command,
+            # not dictation — strip it so the skill never routes it.
+            journal_text = text
+            if self._output_handler.mode == OutputMode.AUTO_SEND:
+                journal_text, _ = extract_send_intent(text)
+            if journal_text:
+                append_dictation(journal_text)
             self._deliver_text(text)
 
         self._set_status(AppStatus.IDLE)

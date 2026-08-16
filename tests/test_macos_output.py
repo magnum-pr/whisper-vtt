@@ -54,6 +54,65 @@ def test_auto_send_pastes_then_enters_on_trigger(mock_run):
     assert pbcopy.kwargs.get("input") == "hello"
 
 
+# ── Send (Enter) targeting — follows the paste destination ───────────
+
+
+@patch("src.backends.macos.subprocess.run")
+@patch("src.backends.macos._frontmost_window_title", return_value="whisper — zsh — 80×24")
+@patch("src.backends.macos._frontmost_process_name", return_value="Terminal")
+@patch("src.backends.macos._gui_process_names", return_value=["Terminal", "Code"])
+def test_auto_send_enter_targets_resolved_pi_window(mock_gui, mock_front, mock_title, mock_run):
+    # whisper terminal front → paste resolves Code → Enter must land in Code too
+    handler = MacOutputHandler(mode=OutputMode.AUTO_SEND, paste_target="pi")
+    handler.deliver("hello enter")
+    scripts = _osascript_scripts(mock_run)
+    assert len(scripts) == 2
+    assert 'tell process "Code"' in scripts[0]
+    assert 'keystroke "v"' in scripts[0]
+    assert 'tell process "Code"' in scripts[1]
+    assert "keystroke return" in scripts[1]
+
+
+@patch("src.backends.macos.subprocess.run")
+@patch("src.backends.macos._frontmost_window_title", return_value="whisper — zsh — 80×24")
+@patch("src.backends.macos._frontmost_process_name", return_value="Terminal")
+@patch("src.backends.macos._gui_process_names", return_value=["Terminal"])
+def test_auto_send_enter_falls_back_to_frontmost(mock_gui, mock_front, mock_title, mock_run):
+    # no resolvable pi host → plain paste + plain Enter
+    handler = MacOutputHandler(mode=OutputMode.AUTO_SEND, paste_target="pi")
+    handler.deliver("hello enter")
+    scripts = _osascript_scripts(mock_run)
+    assert len(scripts) == 2
+    assert 'tell process' not in scripts[1]
+    assert "keystroke return" in scripts[1]
+
+
+@patch("src.backends.macos.subprocess.run")
+@patch("src.backends.macos._frontmost_window_title", return_value="whisper — zsh — 80×24")
+@patch("src.backends.macos._frontmost_process_name", return_value="Terminal")
+@patch("src.backends.macos._gui_process_names", return_value=["Terminal", "Code"])
+def test_auto_send_enter_follows_paste_fallback(mock_gui, mock_front, mock_title, mock_run):
+    # targeted paste fails → plain paste used → Enter must NOT yank to Code
+    import subprocess as sp
+
+    handler = MacOutputHandler(mode=OutputMode.AUTO_SEND, paste_target="pi")
+
+    def _fake_run(args, **kwargs):
+        script = args[-1] if isinstance(args[-1], str) else ""
+        if "tell process" in script and 'keystroke "v"' in script:
+            raise sp.CalledProcessError(1, args)
+        return sp.CompletedProcess(args, 0)
+
+    mock_run.side_effect = _fake_run
+    handler.deliver("hello enter")
+    scripts = _osascript_scripts(mock_run)
+    assert len(scripts) == 3  # targeted paste (failed) + plain paste + plain Enter
+    assert 'tell process' not in scripts[1]
+    assert 'keystroke "v"' in scripts[1]
+    assert 'tell process' not in scripts[2]
+    assert "keystroke return" in scripts[2]
+
+
 @patch("src.backends.macos.subprocess.run")
 def test_auto_send_without_trigger_pastes_only(mock_run):
     handler = MacOutputHandler(mode=OutputMode.AUTO_SEND)

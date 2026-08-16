@@ -5,6 +5,7 @@ from typing import Callable, Optional
 
 import numpy as np
 
+from src.level_meter import GLOBAL_METER
 from src.models import AudioBuffer
 
 logger = logging.getLogger(__name__)
@@ -163,6 +164,9 @@ class AudioCapture:
         # Copy to avoid buffer reuse issues
         chunk = indata[:, 0].copy() if indata.ndim > 1 else indata.copy()
         self._chunks.append(chunk)
+
+        # Publish the live mic level (cheap RMS) for the menu bar meter
+        GLOBAL_METER.update_from_samples(chunk)
 
         if self._chunk_callback:
             try:

@@ -464,6 +464,35 @@ class MacSystemTray:
         except Exception:
             pass
 
+    def _update_meter(self, _) -> None:
+        """Refresh the mic-level menu item + fire the silent-mic alert.
+
+        Reads the shared LevelMeter published by whichever stream owns
+        the mic (wake word listener while idle, recorder while dictating)
+        — no extra audio streams, no device contention.
+        """
+        from src.level_meter import GLOBAL_METER, LevelMeter
+
+        if self._mic_item is not None:
+            db = GLOBAL_METER.level_db()
+            if db == float("-inf"):
+                self._mic_item.title = "Mic: no signal"
+            else:
+                self._mic_item.title = (
+                    f"Mic: {LevelMeter.level_bar(db)} ({db:.0f} dB)"
+                )
+
+        if GLOBAL_METER.silent_too_long and not self._silent_alerted:
+            self._silent_alerted = True
+            self.show_notification(
+                "Whisper VTT",
+                "Microphone appears silent — check "
+                "System Settings → Sound → Input.",
+                play_sound=False,
+            )
+        elif not GLOBAL_METER.silent_too_long:
+            self._silent_alerted = False
+
     def _update_icon(self) -> None:
         if self._app is None:
             return

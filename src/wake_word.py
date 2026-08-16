@@ -9,6 +9,8 @@ import threading
 import time
 from typing import Callable, Optional
 
+from src.level_meter import GLOBAL_METER
+
 logger = logging.getLogger(__name__)
 
 
@@ -186,6 +188,9 @@ class WakeWordListener:
 
             if status:
                 return
+
+            # Publish the live mic level (cheap RMS) for the menu bar meter
+            GLOBAL_METER.update_from_samples(indata)
 
             # Post-resume cooldown — block detection for 3s after resume
             import time

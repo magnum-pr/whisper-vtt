@@ -372,8 +372,10 @@ class WindowsOutputHandler:
         # Set clipboard — this always happens regardless of mode
         self._set_clipboard(text)
 
-        if self._mode == OutputMode.AUTO_PASTE:
+        if self._mode in (OutputMode.AUTO_PASTE, OutputMode.AUTO_SEND):
             self._simulate_paste()
+        if self._mode == OutputMode.AUTO_SEND:
+            self._simulate_enter()
 
     def _set_clipboard(self, text: str) -> None:
         """Set the Windows clipboard to the given text.
@@ -429,6 +431,19 @@ class WindowsOutputHandler:
         except Exception as e:
             # VDI environments often block this — not an error
             logger.debug("SendInput paste blocked or unavailable: %s", e)
+
+    def _simulate_enter(self) -> None:
+        """Press Enter in the frontmost app (sends the message)."""
+        try:
+            import win32com.client
+
+            shell = win32com.client.Dispatch("WScript.Shell")
+            shell.SendKeys("{ENTER}")
+            logger.info("Simulated Enter key.")
+        except ImportError:
+            logger.debug("win32com not available — enter simulation skipped.")
+        except Exception as e:
+            logger.debug("SendInput enter blocked or unavailable: %s", e)
 
 
 """System tray icon and notifications."""

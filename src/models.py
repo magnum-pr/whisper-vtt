@@ -16,6 +16,7 @@ class RecordingMode(Enum):
 
 class OutputMode(Enum):
     AUTO_PASTE = "auto_paste"
+    AUTO_SEND = "auto_send"
     CLIPBOARD = "clipboard"
 
 

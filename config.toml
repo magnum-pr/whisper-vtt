@@ -6,7 +6,7 @@ key = "`"
 mode = "wake_word"
 
 [output]
-mode = "auto_paste"
+mode = "auto_send"
 
 [vad]
 silence_threshold_ms = 3000

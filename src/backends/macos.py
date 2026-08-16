@@ -231,8 +231,10 @@ class MacOutputHandler:
         if not text:
             return
         self._set_clipboard(text)
-        if self._mode == OutputMode.AUTO_PASTE:
+        if self._mode in (OutputMode.AUTO_PASTE, OutputMode.AUTO_SEND):
             self._simulate_paste()
+        if self._mode == OutputMode.AUTO_SEND:
+            self._simulate_enter()
 
     def _set_clipboard(self, text: str) -> None:
         try:
@@ -255,6 +257,20 @@ class MacOutputHandler:
             logger.warning("Paste simulation timed out — text is on the clipboard (Cmd+V).")
         except (subprocess.SubprocessError, FileNotFoundError) as e:
             logger.warning("Paste simulation failed: %s — text is on the clipboard (Cmd+V).", e)
+
+    def _simulate_enter(self) -> None:
+        """Press Return in the frontmost app (sends the message in pi)."""
+        try:
+            subprocess.run(
+                ["osascript", "-e",
+                 'tell application "System Events" '
+                 'to keystroke return'],
+                check=True, capture_output=True, timeout=8)
+            logger.info("Simulated Return key.")
+        except subprocess.TimeoutExpired:
+            logger.warning("Enter simulation timed out.")
+        except (subprocess.SubprocessError, FileNotFoundError) as e:
+            logger.warning("Enter simulation failed: %s", e)
 
 
 ICON_SIZE = 64

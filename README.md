@@ -228,6 +228,10 @@ clipboard either way.
 that in mind for windows you don't want text injected into. Even if a
 paste misses, the text is always on the clipboard as a fallback.
 
+**Switching modes by voice:** dictate *"change auto_send to protected"*
+(no prefix) — pi runs `scripts/set_mode.py <mode>`, which validates and
+updates `config.toml` atomically. Restart whisper to load the new mode.
+
 ### [vad] — silence auto-stop
 
 | Key | Default | Notes |

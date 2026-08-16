@@ -323,13 +323,12 @@ class AppController:
         self._vad_engine.reset()
         self._stop_dispatched = False
 
-        # Start-beep BEFORE the mic opens: show_notification waits for
-        # afplay, so the chime is done by the time recording starts.
-        # Playing it after (the old order) recorded the beep itself —
-        # transcriptions came back as "(beep) …" or "[DING] …".
-        self._set_status(AppStatus.RECORDING)
-        self._tray.show_notification("Whisper VTT", "Recording started")
-
+        # The mic opens FIRST — recording starts the instant the wake
+        # word/onset fires. The notification (and its beep) comes after;
+        # a pre-open chime waits on afplay, which hangs on some machines
+        # (2s timeout), and dictation spoken right after "jarvis" was
+        # lost to the delay. The beep leaking into the audio is a known,
+        # accepted trade-off for now (chime fix deferred).
         try:
             self._audio_capture.start_recording()
         except AudioCaptureError as e:
@@ -340,7 +339,9 @@ class AppController:
                 self._wake_word_listener.resume()
             return
 
+        self._set_status(AppStatus.RECORDING)
         logger.info("Recording started.")
+        self._tray.show_notification("Whisper VTT", "Recording started")
 
     def _stop_recording(self) -> None:
         """Stop recording and begin transcription."""

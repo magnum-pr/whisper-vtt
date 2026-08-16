@@ -11,7 +11,13 @@ immediately re-triggering.
 
 import time
 
-ONSET_MARGIN_DB = 6.0   # above the calibrated silence line
+# Onset sits just above the calibrated silence line. The silence line
+# itself is floor + calibration margin (default 8dB), so stacking more
+# margin here made onset unreachable for normal speech (~-37dB peaks vs
+# a -36dB threshold in the field). One dB above the line is enough to
+# dodge borderline fan flutter; the 300ms consecutive-chunk requirement
+# and the sticky lapse gate handle real ambient hijack.
+ONSET_MARGIN_DB = 1.0
 ONSET_CHUNKS = 3        # consecutive 100ms chunks (300ms) of voice
 ONSET_COOLDOWN_S = 2.0
 

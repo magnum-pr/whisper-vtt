@@ -601,10 +601,13 @@ class MacSystemTray:
 
     def set_session_indicator(self, text: Optional[str]) -> None:
         """Show session state in the menu bar (item count or armed dot),
-        or '' to clear. rumps renders app.title next to the icon."""
+        or '' to clear. rumps renders app.title next to the icon; the
+        icon itself turns blue while armed so the listening state is
+        visible at a glance."""
         self._session_text = text or ""
         if self._app is not None:
             self._app.title = self._session_text
+            self._app.icon = self._write_icon(self._status)
 
     def show_notification(
         self,
@@ -723,14 +726,26 @@ class MacSystemTray:
 
     def _write_icon(self, status: AppStatus) -> str:
         import tempfile
-        image = self._generate_icon(status)
+        image = self._generate_icon(
+            status,
+            color=self._current_icon_color(),
+        )
         path = tempfile.gettempdir() + "/whisper_vtt_icon.png"
         image.save(path, "PNG")
         return path
 
+    def _current_icon_color(self):
+        """Blue while a session is armed (listening mode), otherwise the
+        status color."""
+        if self._session_text:
+            return (0, 122, 255)  # blue = listening
+        return STATUS_COLORS.get(
+            self._status, STATUS_COLORS[AppStatus.IDLE])
+
     @staticmethod
-    def _generate_icon(status: AppStatus) -> Image.Image:
-        color = STATUS_COLORS.get(status, STATUS_COLORS[AppStatus.IDLE])
+    def _generate_icon(status: AppStatus, color=None) -> Image.Image:
+        color = color or STATUS_COLORS.get(
+            status, STATUS_COLORS[AppStatus.IDLE])
         image = Image.new("RGBA", (ICON_SIZE, ICON_SIZE), (0, 0, 0, 0))
         draw = ImageDraw.Draw(image)
         margin = 4

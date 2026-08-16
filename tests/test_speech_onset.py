@@ -85,11 +85,23 @@ def test_threshold_is_silence_line_plus_margin():
     clock = _Clock()
     det = _det(clock)
     with patch("src.speech_onset.time.monotonic", clock):
-        # threshold = -40 + 6 = -34: -35 is below, -33 is above.
-        assert det.process_chunk(-35.0) is False
-        assert det.process_chunk(-33.0) is False
-        assert det.process_chunk(-33.0) is False
-        assert det.process_chunk(-33.0) is True
+        # threshold = -40 + 1 = -39: -40 is below, -38 is above.
+        assert det.process_chunk(-40.0) is False
+        assert det.process_chunk(-38.0) is False
+        assert det.process_chunk(-38.0) is False
+        assert det.process_chunk(-38.0) is True
+
+
+def test_onset_fires_for_speech_just_above_silence_line():
+    # Field regression: calibrated silence line -42.3, speech peaks at
+    # -36.9 — onset must fire (the old +6dB margin demanded > -36.3 and
+    # never triggered).
+    clock = _Clock()
+    det = _det(clock, silence_db=-42.3)
+    with patch("src.speech_onset.time.monotonic", clock):
+        assert det.process_chunk(-40.0) is False
+        assert det.process_chunk(-38.0) is False
+        assert det.process_chunk(-37.5) is True
 
 
 def test_reset_clears_hits():

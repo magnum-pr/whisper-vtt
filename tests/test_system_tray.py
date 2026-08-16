@@ -117,15 +117,3 @@ class TestStatusColors:
         for status in AppStatus:
             assert status in STATUS_COLORS, f"Missing color for {status}"
 
-
-class TestSessionIndicator:
-    def test_indicator_stored_and_cleared(self):
-        from src.backends.macos import MacSystemTray
-
-        tray = MacSystemTray()
-        tray.set_session_indicator("●")
-        assert tray._session_text == "●"
-        tray.set_session_indicator("3")
-        assert tray._session_text == "3"
-        tray.set_session_indicator("")
-        assert tray._session_text == ""

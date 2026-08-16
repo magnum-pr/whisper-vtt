@@ -1,3 +1,22 @@
+## 2026-08-16 18:00 — Dictation session mode (built + pushed `47faa12`)
+
+**"Jarvis, start a new session for AlignMe website"** → chime + "listening" —
+then narrate items back to back, no wake word between them. "that's all"
+commits the compiled list as a titled task list into TASKS.md via pi.
+
+- Trigger/topic parsing in src/session.py (start phrase, standalone end
+  phrases, "scratch that")
+- Speech-onset re-arming: the wake word stream doubles as the armed
+  listener (silence line + 6dB, 300ms hits, cooldowns) — single mic
+  stream at all times
+- Items accumulate locally; per-item tick + menu bar count; 60s idle
+  timeout auto-commits (no lost work); quit commits to the drop box
+- Commit = structured drop box entry (kind/title/items) + auto-paste
+  "process my dictations" → pi files `## <title> (<date>)` task list
+- Skill + jarvis-guide updated for session entries
+- 307 passed / 43 skipped / 0 failures
+
+**User action:** restart whisper to load session mode.
 ## 2026-08-16 17:10 — Resource + environment pass (afternoon session)
 
 Built and pushed (`a4bfc9e`). 272 passed / 42 skipped / 0 failures.

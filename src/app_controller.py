@@ -24,6 +24,7 @@ from src.models import (
     SEND_SUPPRESSED,
 )
 from src.dropbox import append_dictation
+from src.environment import GLOBAL_ENV
 from src.output_trigger import extract_no_send_intent, extract_send_intent
 from src.paths import PathResolver
 from src.transcription_engine import TranscriptionEngine, TranscriptionError
@@ -135,6 +136,7 @@ class AppController:
         waiting for work, then processes one transcription if queued.
         """
         self._reload_config_if_changed()
+        self._handle_device_change()
         buffer = None
         with self._lock:
             if not self._pending_transcribe:
@@ -144,6 +146,30 @@ class AppController:
 
         if buffer is not None:
             self._do_transcribe(buffer)
+
+    def _handle_device_change(self) -> None:
+        """React to an OS default input device change (latched by the
+        environment refresher). While idle, restart the wake word stream
+        so it reopens on the new default; the recorder resolves fresh at
+        every start anyway, so nothing else needs to move. While busy,
+        leave the change latched for a later tick.
+        """
+        if self._wake_word_listener is None:
+            GLOBAL_ENV.consume_device_change()
+            return
+        if GLOBAL_ENV.pending_device_change() is None:
+            return
+        if self._status != AppStatus.IDLE:
+            return  # busy — handle on a later tick
+        new_device = GLOBAL_ENV.consume_device_change()
+        if new_device is None:
+            return
+        logger.info(
+            "Restarting wake word listener on OS default device %r.",
+            new_device,
+        )
+        self._wake_word_listener.stop()
+        self._wake_word_listener.start()
 
     # ── Config hot-reload ───────────────────────────────────────────
 
@@ -243,6 +269,22 @@ class AppController:
         """Begin recording from the microphone."""
         if self._status != AppStatus.IDLE:
             return
+
+        # Calibrated silence threshold: ambient floor (fed by the idle
+        # wake word stream) + margin, clamped. Falls back to the static
+        # config threshold while the floor warms up (~3s of idle audio).
+        calibrated = GLOBAL_ENV.silence_threshold_db(
+            self._config.calibration_margin_db
+        )
+        if calibrated is not None:
+            self._vad_engine.volume_threshold_db = calibrated
+            logger.debug(
+                "VAD silence threshold calibrated: %.1f dB (floor + %.1f)",
+                calibrated,
+                self._config.calibration_margin_db,
+            )
+        else:
+            self._vad_engine.volume_threshold_db = self._config.volume_threshold_db
 
         # Pause the wake word listener FIRST: pause() blocks until its
         # PortAudio stream is closed, so the recording stream below gets

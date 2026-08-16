@@ -1169,3 +1169,118 @@ class TestDeliveryResultNotifications:
             "Override: pasted without sending.",
             play_sound=False,
         )
+
+
+# ── Environment: calibrated VAD threshold + device changes ──────────
+
+
+class TestEnvironmentIntegration:
+    def test_start_recording_pushes_calibrated_threshold(self):
+        from unittest.mock import MagicMock as MM
+
+        vad = MM()
+        vad.volume_threshold_db = None
+
+        controller = AppController(
+            config=make_toggle_config(),
+            tray=MM(),
+            hotkey_listener=MM(),
+            audio_capture=MM(),
+            vad_engine=vad,
+            transcription_engine=MM(),
+            output_handler=MM(),
+        )
+
+        with patch("src.app_controller.GLOBAL_ENV.silence_threshold_db",
+                   return_value=-42.5) as mock_cal:
+            controller._start_recording()
+
+        mock_cal.assert_called_once_with(8.0)  # default margin
+        assert vad.volume_threshold_db == -42.5
+
+    def test_start_recording_falls_back_to_config_threshold(self):
+        from unittest.mock import MagicMock as MM
+
+        vad = MM()
+        vad.volume_threshold_db = None
+
+        controller = AppController(
+            config=make_toggle_config(),
+            tray=MM(),
+            hotkey_listener=MM(),
+            audio_capture=MM(),
+            vad_engine=vad,
+            transcription_engine=MM(),
+            output_handler=MM(),
+        )
+
+        with patch("src.app_controller.GLOBAL_ENV.silence_threshold_db",
+                   return_value=None):
+            controller._start_recording()
+
+        assert vad.volume_threshold_db == -15.0  # from make_toggle_config
+
+    def test_device_change_restarts_wake_word_listener(self):
+        from unittest.mock import MagicMock as MM
+
+        listener = MM()
+        controller = AppController(
+            config=make_wake_word_config(),
+            tray=MM(),
+            hotkey_listener=MM(),
+            audio_capture=MM(),
+            vad_engine=MM(),
+            transcription_engine=MM(),
+            output_handler=MM(),
+            wake_word_listener=listener,
+        )
+        controller._status = AppStatus.IDLE
+
+        with patch("src.app_controller.GLOBAL_ENV.pending_device_change",
+                   return_value=2), \
+             patch("src.app_controller.GLOBAL_ENV.consume_device_change",
+                   return_value=2):
+            controller._handle_device_change()
+
+        listener.stop.assert_called_once()
+        listener.start.assert_called_once()
+
+    def test_device_change_deferred_while_busy(self):
+        from unittest.mock import MagicMock as MM
+
+        listener = MM()
+        controller = AppController(
+            config=make_wake_word_config(),
+            tray=MM(),
+            hotkey_listener=MM(),
+            audio_capture=MM(),
+            vad_engine=MM(),
+            transcription_engine=MM(),
+            output_handler=MM(),
+            wake_word_listener=listener,
+        )
+        controller._status = AppStatus.RECORDING
+
+        with patch("src.app_controller.GLOBAL_ENV.pending_device_change",
+                   return_value=2), \
+             patch("src.app_controller.GLOBAL_ENV.consume_device_change") as consume:
+            controller._handle_device_change()
+
+        consume.assert_not_called()
+        listener.stop.assert_not_called()
+
+    def test_device_change_without_listener_is_dropped(self):
+        from unittest.mock import MagicMock as MM
+
+        controller = AppController(
+            config=make_toggle_config(),
+            tray=MM(),
+            hotkey_listener=MM(),
+            audio_capture=MM(),
+            vad_engine=MM(),
+            transcription_engine=MM(),
+            output_handler=MM(),
+        )
+        with patch("src.app_controller.GLOBAL_ENV.consume_device_change") as consume:
+            controller._handle_device_change()
+        consume.assert_called_once()

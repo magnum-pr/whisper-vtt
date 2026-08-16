@@ -15,10 +15,12 @@ from src.app_controller import AppController
 from src.audio_capture import AudioCapture
 from src.config_manager import load_config, RecordingMode
 from src.backends import HotkeyListener
+from src.environment import GLOBAL_ENV
 from src.models import AppStatus
 from src.backends import OutputHandler
 from src.paths import PathResolver
 from src.backends import SystemTray
+from src.single_instance import acquire_single_instance, release_single_instance
 from src.transcription_engine import TranscriptionEngine
 from src.vad_engine import VADEngine
 from src.wake_word import WakeWordListener
@@ -210,63 +212,36 @@ def setup_logging() -> None:
 def _resolve_audio_device(
     configured_name: Optional[str], tray=None
 ) -> Optional[int]:
-    """Resolve the audio input device.
+    """Resolve the audio input device via output-paired routing.
 
-    - configured device found → its index, silently
-    - no device configured ("") → system default (None), silently
-    - configured device MISSING (unplugged, renamed) → system default
-      (None) with a tray notification — no interactive prompt in a
-      daemon/menu-bar context
+    - configured name → its index when present
+    - auto mode → the mic paired with the current default OUTPUT
+      (MacBook mic fallback), resolved fresh at every stream open
+
+    Returns None when nothing resolved — streams fall back to
+    PortAudio's own default.
     """
     logger = logging.getLogger(__name__)
-
-    def _notify(message: str) -> None:
-        logger.warning(message)
+    resolved = GLOBAL_ENV.resolve_input_device(configured_name)
+    if resolved is None and configured_name:
+        logger.warning(
+            "Configured microphone '%s' not found — "
+            "falling back to auto-paired input. "
+            "Check config.toml [audio] device_name.",
+            configured_name,
+        )
         if tray is not None:
             try:
-                tray.show_notification("Whisper VTT", message, play_sound=False)
-            except Exception as e:
-                logger.debug("Tray notification failed: %s", e)
-
-    try:
-        import sounddevice as sd
-    except ImportError:
-        _notify("sounddevice not available, using system default.")
-        return None
-
-    try:
-        devices = sd.query_devices()
-    except Exception as e:
-        _notify(f"Could not query audio devices: {e}. Using system default.")
-        return None
-
-    input_names: set[str] = set()
-    for d in devices:
-        if d.get("max_input_channels", 0) > 0:
-            input_names.add(d.get("name", ""))
-
-    if not input_names:
-        _notify("No input devices found. Using system default.")
-        return None
-
-    # No configured device (or explicit system default) — use it silently
-    if not configured_name:
-        logger.info("No audio device configured — using system default.")
-        return None
-
-    # Exact match against the configured name
-    for idx, d in enumerate(devices):
-        if d.get("max_input_channels", 0) > 0 and d.get("name") == configured_name:
-            logger.info("Using configured audio device: %s", configured_name)
-            return idx
-
-    # Configured device is gone — fall back to the system default and
-    # tell the user (an unplugged interface otherwise records silence).
-    _notify(
-        f"Microphone '{configured_name}' not found — "
-        "using system default. Check config.toml [audio] device_name."
-    )
-    return None
+                tray.show_notification(
+                    "Whisper VTT",
+                    f"Microphone '{configured_name}' not found — "
+                    "using auto-paired input.",
+                    play_sound=False,
+                )
+            except Exception:
+                pass
+        resolved = GLOBAL_ENV.resolve_input_device(None)
+    return resolved
 
 def main() -> None:
     """Application entry point."""
@@ -315,13 +290,36 @@ def main() -> None:
         input("Press Enter to exit...")
         sys.exit(1)
 
+    # ── Single instance guard ────────────────────────────────────────
+    pidfile = PathResolver.config_path("whisper.pid")
+    acquire_single_instance(pidfile)
+
     # ── Audio device selection ─────────────────────────────────────────
     logger.info("Resolving audio input device...")
     device_index = _resolve_audio_device(config.audio_device_name, tray=tray)
+    if device_index is not None:
+        try:
+            import sounddevice as sd
+            logger.info(
+                "Input device: %s",
+                sd.query_devices()[device_index].get("name"),
+            )
+        except Exception:
+            pass
+
+    # Resolver used at EVERY stream open: auto mode follows the current
+    # default OUTPUT (AirPods out → AirPods mic; MacBook speakers →
+    # MacBook mic), a pinned name resolves fresh each time.
+    device_resolver = lambda: GLOBAL_ENV.resolve_input_device(
+        config.audio_device_name
+    )
 
     # ── Audio capture ───────────────────────────────────────────────────
     logger.info("Initializing audio capture...")
-    audio_capture = AudioCapture(device_index=device_index)
+    audio_capture = AudioCapture(
+        device_index=device_index,
+        device_resolver=device_resolver,
+    )
 
     # ── VAD engine ──────────────────────────────────────────────────────
     logger.info("Initializing VAD engine...")
@@ -380,6 +378,7 @@ def main() -> None:
             keyword=config.wake_word,
             threshold=config.wake_word_threshold,
             device_index=device_index,
+            device_resolver=device_resolver,
         )
         logger.info(
             "Wake word mode: '%s' (threshold %.0e)",
@@ -398,6 +397,9 @@ def main() -> None:
         wake_word_listener=wake_word_listener,
     )
 
+    # ── Environment refresher (noise floor + paired-device ticks) ───────
+    GLOBAL_ENV.start_refresh(config.refresh_interval_s)
+
     # ── Shutdown handler ────────────────────────────────────────────────
     def on_exit() -> None:
         logger.info("Shutting down...")
@@ -405,6 +407,11 @@ def main() -> None:
             controller.stop()
         except Exception as e:
             logger.error("Error during shutdown: %s", e)
+        try:
+            GLOBAL_ENV.stop_refresh()
+        except Exception as e:
+            logger.error("Error stopping environment refresh: %s", e)
+        release_single_instance(pidfile)
 
     tray.set_on_exit(on_exit)
     signal.signal(signal.SIGINT, lambda sig, frame: on_exit())

@@ -87,3 +87,10 @@
 - [x] Q-1 On-mode safety net — in `on`/auto_send mode, when no pi host is running (no Code/pi window, no fresh handshake), withhold Enter + notify instead of sending into frontmost app. Done when: tests cover pi-not-running in on-mode; Enter withheld; notification shown. → `SEND_NO_HOST`
 - [x] Q-2 Config hot-reload — watch config.toml (mtime+size, ~1s poll in process_queue); mode changes apply on next dictation, no whisper restart. Done when: editing config.toml changes output mode without restart; tests pass. Propagates output_mode + paste_target live.
 - [x] Q-3 Per-dictation mode override — spoken phrase ("paste this without sending" / "don't send" / "just paste"…) suppresses Enter for that one dictation only; phrase stripped from paste + journal. Done when: phrase detection skips Enter for a single dictation; next dictation behaves per config. → `SEND_SUPPRESSED`
+
+## Done (2026-08-16 afternoon) — resource + environment pass
+
+- [x] Single-instance guard — `src/single_instance.py`: pidfile in the app config dir; a new launch SIGTERMs a live whisper instance and takes over; stale/recycled pids are never killed. Wired in `__main__` (acquire on start, release on exit).
+- [x] Output-paired input routing — `src/environment.py`: in auto mode the mic follows the current default OUTPUT (AirPods out → AirPods mic; MacBook speakers → MacBook mic), MacBook mic as default fallback, OS default input as last resort. Pinned `device_name` still works. Resolved fresh at every stream open; recorder and wake word both use it.
+- [x] Environment refresher — daemon tick every `refresh_interval_s` (default 120s): latches paired-input changes (controller restarts the wake word stream while idle); rolling noise floor (20th percentile, 120s window, idle chunks only) → VAD silence threshold = floor + `calibration_margin_db` (default 8 dB), clamped [-60, -28], pushed at every recording start.
+- [x] Config: `[environment]` section + `device_name = "auto"` semantics.

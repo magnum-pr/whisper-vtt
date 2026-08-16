@@ -5,6 +5,7 @@ from typing import Callable, Optional
 
 import numpy as np
 
+from src.environment import GLOBAL_ENV
 from src.level_meter import GLOBAL_METER
 from src.models import AudioBuffer
 
@@ -36,11 +37,16 @@ class AudioCapture:
         channels: int = CHANNELS,
         chunk_samples: int = SAMPLES_PER_CHUNK,
         device_index: Optional[int] = None,
+        device_resolver: Optional[Callable[[], Optional[int]]] = None,
     ):
         self.sample_rate = sample_rate
         self.channels = channels
         self.chunk_samples = chunk_samples
         self.device_index = device_index
+        # Called at every recording start to resolve the input device
+        # fresh (OS default at this moment, or the saved name's current
+        # index). Falls back to the static device_index when unset.
+        self._device_resolver = device_resolver
 
         self._stream: Optional[object] = None
         self._chunks: list[np.ndarray] = []
@@ -80,13 +86,18 @@ class AudioCapture:
             ) from e
 
         try:
+            device = (
+                self._device_resolver()
+                if self._device_resolver is not None
+                else self.device_index
+            )
             self._stream = sd.InputStream(
                 samplerate=self.sample_rate,
                 channels=self.channels,
                 dtype="float32",
                 callback=self._audio_callback,
                 blocksize=self.chunk_samples,
-                device=self.device_index,
+                device=device,
             )
             self._stream.start()
             self._is_recording = True
@@ -167,6 +178,9 @@ class AudioCapture:
 
         # Publish the live mic level (cheap RMS) for the menu bar meter
         GLOBAL_METER.update_from_samples(chunk)
+        # Ambient floor: recording chunks never feed it (speech would
+        # corrupt the baseline).
+        GLOBAL_ENV.update_from_samples(chunk, recording=True)
 
         if self._chunk_callback:
             try:

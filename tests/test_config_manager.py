@@ -425,3 +425,79 @@ mode = "clipboard"
             assert 'paste_target = "Code"' in written
         finally:
             tmp_path.unlink()
+
+
+
+def _write_config_toml(body: str) -> Path:
+    """Write TOML to a temp file and return its path."""
+    import tempfile
+    f = tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False)
+    f.write(body)
+    f.close()
+    return Path(f.name)
+
+
+class TestEnvironmentSection:
+    """[environment] refresh_interval_s + calibration_margin_db."""
+
+    def test_defaults_when_section_missing(self):
+        config = load_config(_write_config_toml("""\
+[output]
+mode = "clipboard"
+"""))
+        assert config.refresh_interval_s == 120.0
+        assert config.calibration_margin_db == 8.0
+
+    def test_values_parsed(self):
+        config = load_config(_write_config_toml("""\
+[output]
+mode = "clipboard"
+
+[environment]
+refresh_interval_s = 300
+calibration_margin_db = 6.5
+"""))
+        assert config.refresh_interval_s == 300.0
+        assert config.calibration_margin_db == 6.5
+
+    def test_invalid_values_fall_back(self):
+        config = load_config(_write_config_toml("""\
+[output]
+mode = "clipboard"
+
+[environment]
+refresh_interval_s = -5
+calibration_margin_db = "loud"
+"""))
+        assert config.refresh_interval_s == 120.0
+        assert config.calibration_margin_db == 8.0
+
+    def test_round_trip_serialization(self):
+        config = AppConfig(
+            hotkey=HotkeyCombo(modifiers=frozenset(), key="`"),
+            recording_mode=RecordingMode.WAKE_WORD,
+            output_mode=OutputMode.AUTO_SEND,
+            silence_threshold_ms=3000,
+            volume_threshold_db=-50.0,
+            model_path=Path("models/ggml-base.en.bin"),
+            refresh_interval_s=180.0,
+            calibration_margin_db=7.0,
+        )
+        toml_str = config_to_toml(config)
+        assert "refresh_interval_s = 180" in toml_str
+        assert "calibration_margin_db = 7.0" in toml_str
+
+        reloaded = load_config(_write_config_toml(toml_str))
+        assert reloaded.refresh_interval_s == 180.0
+        assert reloaded.calibration_margin_db == 7.0
+
+    def test_device_name_auto_maps_to_none(self):
+        for value in ("auto", "system", ""):
+            config = load_config(_write_config_toml(f"""\
+[output]
+mode = "clipboard"
+
+[audio]
+device_name = "{value}"
+"""))
+            assert config.audio_device_name is None, value

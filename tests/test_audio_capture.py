@@ -11,7 +11,10 @@ from src.models import AudioBuffer
 
 
 class FakeStream:
-    """Mock sounddevice stream with stop/close methods."""
+    """Mock sounddevice stream with start/stop/close methods."""
+    def start(self) -> None:
+        pass
+
     def stop(self) -> None:
         pass
 
@@ -196,3 +199,43 @@ class TestAudioCaptureStartErrors:
                 assert "sounddevice" in str(e)
         finally:
             builtins.__import__ = original_import
+
+
+class TestDeviceResolver:
+    """device_resolver is consulted at every recording start."""
+
+    def test_resolver_used_at_start(self):
+        from unittest.mock import patch
+
+        calls = []
+        cap = AudioCapture(device_index=1, device_resolver=lambda: calls.append("r") or 9)
+
+        with patch("sounddevice.InputStream") as mock_stream:
+            mock_stream.return_value = FakeStream()
+            cap.start_recording()
+
+        mock_stream.assert_called_once()
+        assert mock_stream.call_args.kwargs.get("device") == 9
+        assert calls == ["r"]
+
+    def test_resolver_none_falls_back_to_static_index(self):
+        from unittest.mock import patch
+
+        cap = AudioCapture(device_index=1)
+
+        with patch("sounddevice.InputStream") as mock_stream:
+            mock_stream.return_value = FakeStream()
+            cap.start_recording()
+
+        assert mock_stream.call_args.kwargs.get("device") == 1
+
+    def test_resolver_not_called_without_one(self):
+        from unittest.mock import patch
+
+        cap = AudioCapture()
+
+        with patch("sounddevice.InputStream") as mock_stream:
+            mock_stream.return_value = FakeStream()
+            cap.start_recording()
+
+        assert mock_stream.call_args.kwargs.get("device") is None

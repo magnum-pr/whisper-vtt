@@ -9,6 +9,7 @@ import threading
 import time
 from typing import Callable, Optional
 
+from src.environment import GLOBAL_ENV
 from src.level_meter import GLOBAL_METER
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,7 @@ class WakeWordListener:
         keyword: str = "alexa",
         threshold: float = 1e-20,
         device_index: Optional[int] = None,
+        device_resolver: Optional[Callable[[], Optional[int]]] = None,
     ):
         """
         Args:
@@ -37,10 +39,13 @@ class WakeWordListener:
             threshold: KWS threshold (lower = more selective).
                        Default 1e-20 works for normal speaking voice.
             device_index: sounddevice device index (None = system default).
+            device_resolver: callable resolved at every stream open —
+                the OS default at that moment (or saved name's index).
         """
         self._keyword = keyword
         self._threshold = threshold
         self._device_index = device_index
+        self._device_resolver = device_resolver
 
         self._on_detected: Optional[Callable[[], None]] = None
         self._running = False
@@ -191,6 +196,9 @@ class WakeWordListener:
 
             # Publish the live mic level (cheap RMS) for the menu bar meter
             GLOBAL_METER.update_from_samples(indata)
+            # Idle ambient audio feeds the rolling noise floor (the
+            # wake word stream only runs while the app is idle).
+            GLOBAL_ENV.update_from_samples(indata)
 
             # Post-resume cooldown — block detection for 3s after resume
             import time
@@ -251,13 +259,18 @@ class WakeWordListener:
                 continue
             try:
                 self._stream_closed.clear()
+                device = (
+                    self._device_resolver()
+                    if self._device_resolver is not None
+                    else self._device_index
+                )
                 with sd.InputStream(
                     samplerate=self.SAMPLE_RATE,
                     channels=1,
                     dtype="float32",
                     callback=audio_callback,
                     blocksize=self.FRAME_SAMPLES,
-                    device=self._device_index,
+                    device=device,
                 ):
                     while self._running and not self._paused:
                         sd.sleep(100)

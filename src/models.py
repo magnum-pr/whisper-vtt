@@ -57,8 +57,10 @@ class AppConfig:
     model_path: Path
     wake_word: str = "alexa"
     wake_word_threshold: float = 1e-30
-    audio_device_name: Optional[str] = None  # saved device name; None = use system default
+    audio_device_name: Optional[str] = None  # saved device name; None/"system" = follow OS default
     paste_target: str = "frontmost"  # "frontmost" | "pi" | process name (macOS)
+    refresh_interval_s: float = 120.0  # environment refresh ticks (device check)
+    calibration_margin_db: float = 8.0  # VAD silence line = noise floor + margin
 
 
 @dataclass(frozen=True)

@@ -21,6 +21,8 @@ DEFAULT_MODEL_PATH = "models/ggml-base.en.bin"
 DEFAULT_WAKE_WORD = "jarvis"
 DEFAULT_WAKE_WORD_THRESHOLD = 1e-20
 DEFAULT_AUDIO_DEVICE_NAME: Optional[str] = None
+DEFAULT_REFRESH_INTERVAL_S = 120.0
+DEFAULT_CALIBRATION_MARGIN_DB = 8.0
 
 # Valid values
 VALID_MODIFIERS = frozenset({"ctrl", "shift", "alt", "win"})
@@ -128,20 +130,46 @@ def _validate_volume_threshold(value) -> float:
 
 
 def _validate_audio_device_name(value) -> Optional[str]:
-    """Validate audio device name. Empty string or None means use system default."""
+    """Validate audio device name. Empty string, None, "auto", or
+    "system" mean output-paired input routing (mic follows what the
+    user is hearing from; MacBook mic fallback). A real name pins that
+    device."""
     if value is None:
         return None
     if isinstance(value, str):
         stripped = value.strip()
-        if stripped:
-            return stripped
-        # Empty/whitespace string = explicit system default
-        return None
+        if not stripped or stripped.lower() in ("auto", "system"):
+            return None
+        return stripped
     logger.warning(
-        "Invalid audio device name %r (expected a string). Using system default.",
+        "Invalid audio device name %r (expected a string). Using auto-paired input.",
         value,
     )
     return None
+
+
+def _validate_refresh_interval(value) -> float:
+    """Validate environment refresh interval. Must be a positive number."""
+    if isinstance(value, (int, float)) and value > 0:
+        return float(value)
+    logger.warning(
+        "Invalid refresh_interval_s %r (expected positive number). Using default: %.0f.",
+        value,
+        DEFAULT_REFRESH_INTERVAL_S,
+    )
+    return DEFAULT_REFRESH_INTERVAL_S
+
+
+def _validate_calibration_margin(value) -> float:
+    """Validate VAD calibration margin. Must be a number."""
+    if isinstance(value, (int, float)):
+        return float(value)
+    logger.warning(
+        "Invalid calibration_margin_db %r (expected number). Using default: %.1f.",
+        value,
+        DEFAULT_CALIBRATION_MARGIN_DB,
+    )
+    return DEFAULT_CALIBRATION_MARGIN_DB
 
 
 def _validate_paste_target(value) -> str:
@@ -266,6 +294,17 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
         audio_section.get("device_name", None)
     )
 
+    # Parse [environment] section
+    environment_section = data.get("environment", {})
+    if not isinstance(environment_section, dict):
+        environment_section = {}
+    refresh_interval_s = _validate_refresh_interval(
+        environment_section.get("refresh_interval_s", DEFAULT_REFRESH_INTERVAL_S)
+    )
+    calibration_margin_db = _validate_calibration_margin(
+        environment_section.get("calibration_margin_db", DEFAULT_CALIBRATION_MARGIN_DB)
+    )
+
     return AppConfig(
         hotkey=HotkeyCombo(modifiers=modifiers, key=key),
         recording_mode=recording_mode,
@@ -277,6 +316,8 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
         wake_word_threshold=wake_word_threshold,
         audio_device_name=audio_device_name,
         paste_target=paste_target,
+        refresh_interval_s=refresh_interval_s,
+        calibration_margin_db=calibration_margin_db,
     )
 
 
@@ -308,6 +349,10 @@ path = "{config.model_path.as_posix()}"
 
 [audio]
 device_name = "{config.audio_device_name or ''}"
+
+[environment]
+refresh_interval_s = {config.refresh_interval_s:.0f}
+calibration_margin_db = {config.calibration_margin_db:.1f}
 """
 
 

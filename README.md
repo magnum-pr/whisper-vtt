@@ -1,6 +1,6 @@
 # Whisper VTT
 
-> A portable, fully offline, system-wide dictation utility for Windows. Press a hotkey, speak, and your words appear as text — transcribed locally. No audio ever leaves the machine.
+> A portable, fully offline, system-wide dictation utility for Windows and macOS. Press a hotkey or say a wake word, speak, and your words appear as text — transcribed locally. No audio ever leaves the machine.
 
 ---
 
@@ -9,8 +9,8 @@
 1. Listens for a **global hotkey** (default: backtick) or **wake word** from any application
 2. Captures microphone audio at 16kHz mono with voice activity detection
 3. Transcribes locally via **whisper.cpp (GGML)** on CPU — no GPU, no network, no API keys
-4. Places transcribed text on the **clipboard** for manual paste (Ctrl+V)
-5. Lives in the **system tray** with colored status indicators
+4. Delivers transcribed text to the **clipboard**, **auto-pastes** it into the focused app, or **auto-sends** it (paste + Enter) depending on output mode
+5. Lives in the **system tray / menu bar** with colored status indicators
 
 ---
 
@@ -30,7 +30,7 @@ Every dictation tool either phones home, needs an internet connection, requires 
 | **Wake word** | Optional voice activation — say a phrase to start recording |
 | **VDI-compatible** | PortAudio via sounddevice for virtual desktop audio redirection |
 | **VAD auto-stop** | RMS energy-based voice activity detection stops recording when you stop speaking |
-| **Clipboard output** | Text lands on clipboard — paste manually wherever your cursor is |
+| **Flexible output modes** | Clipboard-only, auto-paste, or auto-send with a spoken "Enter" guard-rail |
 | **TOML config** | Power-user config for hotkey, model, VAD sensitivity, wake word, output mode |
 | **Model selector** | Bundles `tiny.en` (~75MB); supports any whisper.cpp GGML model |
 | **Zero-config start** | Sensible defaults — creates config on first run |
@@ -44,8 +44,8 @@ Every dictation tool either phones home, needs an internet connection, requires 
 | Language | Python 3.11+ |
 | Transcription | whisper.cpp via pywhispercpp (GGML, CPU-only) |
 | Audio capture | sounddevice (PortAudio) |
-| Hotkey | pywin32 global keyboard hook |
-| System tray | pystray + Pillow |
+| Hotkey | pywin32 global keyboard hook (Windows) · Quartz event tap (macOS) |
+| System tray | pystray + Pillow (Windows) · rumps menu bar app (macOS) |
 | Config | TOML (tomllib/tomli) |
 | Packaging | PyInstaller `--onedir` |
 | Testing | pytest + hypothesis |
@@ -112,49 +112,112 @@ python scripts/build.py
 
 ## Configuration
 
-On first run, a `config.toml` is created with sensible defaults:
+Whisper VTT reads `config.toml` at startup. The file is auto-created with
+sensible defaults on first run — you never have to touch it. Invalid values
+fall back to defaults with a logged warning; a bad config never crashes the
+app. Config location: next to the app (source runs) or
+`~/Library/Application Support/Whisper-VTT/config.toml` (packaged macOS).
+
+### Full reference
 
 ```toml
 [hotkey]
-key = "backtick"
-mode = "push_to_talk"    # or "toggle"
+modifiers = []        # any of: "ctrl", "shift", "alt", "win" ("win" = Cmd on macOS)
+key = "`"             # see Supported keys below
 
-[audio]
-sample_rate = 16000
-channels = 1
-
-[vad]
-threshold = 0.02
-silence_timeout_ms = 700
-
-[transcription]
-model = "tiny.en"
-
-[wake_word]
-enabled = false
-phrase = "hey whisper"
+[recording]
+mode = "wake_word"    # "toggle" | "push_to_talk" | "wake_word"
 
 [output]
-mode = "clipboard"       # "clipboard" or "auto_paste"
+mode = "auto_send"    # "clipboard" | "auto_paste" | "auto_send"
+
+[vad]
+silence_threshold_ms = 3000   # ms of continuous silence before auto-stop
+volume_threshold_db = -50.0   # quieter-than-this counts as silence (dB)
+
+[wake_word]
+phrase = "jarvis"     # the spoken trigger phrase
+threshold = 1e-20     # detection sensitivity — lower = stricter
+
+[model]
+path = "models/ggml-base.en.bin"   # any whisper.cpp GGML (.bin) model
+
+[audio]
+device_name = "MacBook Pro Microphone"  # exact device name; "" = system default
 ```
+
+### [hotkey] — the manual trigger
+
+| Key | Default | Notes |
+|---|---|---|
+| `modifiers` | `[]` | Any combination of `"ctrl"`, `"shift"`, `"alt"`, `"win"` (Cmd on macOS) |
+| `key` | `` ` `` | Letters `a`–`z`, digits `0`–`9`, `f1`–`f12`, or names: `` ` `` / `"backtick"`, `"space"`, `"tab"`, `"enter"` / `"return"`, `"escape"` / `"esc"`, `"backspace"`, `"delete"`, `"insert"`, `"home"`, `"end"`, `"pageup"`, `"pagedown"`, `"up"` / `"down"` / `"left"` / `"right"`, `"capslock"`, `"numlock"`, `"scrolllock"`, `"printscreen"`, `"pause"` |
+
+### [recording] — how recording starts
+
+| Mode | Behavior |
+|---|---|
+| `toggle` *(default)* | Press the hotkey to start recording, press again to stop |
+| `push_to_talk` | Hold the hotkey to record, release to stop |
+| `wake_word` | Say the wake phrase to start; silence auto-stop ends it. The hotkey still works as a toggle in this mode |
+
+### [output] — where the transcribed text goes
+
+| Mode | Behavior |
+|---|---|
+| `clipboard` *(default)* | Text lands on the clipboard — you paste manually (Cmd+V / Ctrl+V) |
+| `auto_paste` | Copies to the clipboard **and** pastes into whatever app is focused; you press Enter yourself. Safe general-purpose mode |
+| `auto_send` | Like `auto_paste`, plus an **Enter press — but only when you end your dictation with the spoken word "Enter"** (stripped from the text). It never sends unless you explicitly say the trigger |
+
+**The `auto_send` guard-rail:**
+
+| You say | What happens |
+|---|---|
+| *"fix the bug on the homepage"* | Pastes the text — **no Enter** |
+| *"fix the bug on the homepage enter"* | Pastes *"fix the bug on the homepage"* **and presses Enter** |
+
+- Case-insensitive (`"Enter"`, `"enter"`, `"ENTER"` all work)
+- Trailing punctuation tolerated (*"…enter!"* still sends)
+- Word-boundary aware: *"center"* does **not** trigger
+
+⚠️ `auto_paste` / `auto_send` type into the **focused** app — keep the
+intended window frontmost. Even if a paste misses, the text is always on
+the clipboard as a fallback.
+
+### [vad] — silence auto-stop
+
+| Key | Default | Notes |
+|---|---|---|
+| `silence_threshold_ms` | `3000` | Milliseconds of continuous silence before recording auto-stops. Lower = snappier stop, higher = more tolerance for pauses |
+| `volume_threshold_db` | `-50.0` | Sounds quieter than this level count as silence. More negative = quieter threshold = auto-stop fires more readily |
+
+### [wake_word] — voice activation
+
+| Key | Default | Notes |
+|---|---|---|
+| `phrase` | `"jarvis"` | The spoken trigger phrase (pocketsphinx keyphrase) |
+| `threshold` | `1e-20` | Detection sensitivity — lower is stricter (fewer false triggers). `1e-20` is intentionally permissive |
+
+### [model] — the transcription model
+
+| Key | Default | Notes |
+|---|---|---|
+| `path` | `models/ggml-base.en.bin` | Path (relative to the app or absolute) to any whisper.cpp GGML model. Size/speed tradeoffs: `ggml-tiny.en.bin` (~77MB), `ggml-base.en.bin` (~141MB), `ggml-small.en.bin` (~466MB). If the file is missing, the engine falls back to loading the model by name |
+
+### [audio] — microphone selection
+
+| Key | Default | Notes |
+|---|---|---|
+| `device_name` | `""` | Exact device name as shown in the startup list (e.g. `"MacBook Pro Microphone"`). Empty string = system default, chosen silently |
 
 ---
 
 ## Requirements
 
-- Windows (primary target)
+- Windows or macOS
 - Microphone
 - Python 3.11+ (for development)
-- ~75MB disk for bundled `tiny.en` model
-
----
-
-## CLI (optional)
-
-```bash
-python -m src --help
-python -m src --model base.en --hotkey f9 --wake-word "computer"
-```
+- ~75MB disk for the bundled `tiny.en` model
 
 ---
 

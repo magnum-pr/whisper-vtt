@@ -11,6 +11,7 @@ from typing import Callable, Optional
 
 from src.environment import GLOBAL_ENV
 from src.level_meter import GLOBAL_METER
+from src.speech_onset import SpeechOnsetDetector
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,13 @@ class WakeWordListener:
         self._device_resolver = device_resolver
 
         self._on_detected: Optional[Callable[[], None]] = None
+        self._on_onset: Optional[Callable[[], None]] = None
+        # Speech-onset detector (session mode): while enabled, N
+        # consecutive loud chunks fire _on_onset — the controller starts
+        # a recording like a wake word hit. Armed only while a dictation
+        # session is open.
+        self._onset_detector = SpeechOnsetDetector(silence_threshold_db=-40.0)
+        self._onset_enabled = False
         self._running = False
         self._paused = False
         self._cooldown_until: float = 0.0
@@ -68,6 +76,38 @@ class WakeWordListener:
     def set_on_detected(self, callback: Callable[[], None]) -> None:
         """Set callback invoked when the wake word is detected."""
         self._on_detected = callback
+
+    def set_on_onset(self, callback: Callable[[], None]) -> None:
+        """Set callback invoked when speech onset fires (session mode)."""
+        self._on_onset = callback
+
+    def set_onset_enabled(
+        self, enabled: bool, silence_threshold_db: Optional[float] = None
+    ) -> None:
+        """Arm/disarm speech-onset detection.
+
+        Arming (re)calibrates the onset threshold from the current
+        ambient silence line and starts a short cooldown so trailing
+        echo can't immediately re-trigger.
+        """
+        self._onset_enabled = enabled
+        if enabled:
+            threshold = (
+                silence_threshold_db
+                if silence_threshold_db is not None
+                else -40.0
+            )
+            self._onset_detector.arm(threshold)
+
+    def _dispatch_onset(self) -> None:
+        """Run the onset callback off the PortAudio callback thread."""
+        try:
+            if self._on_onset:
+                self._on_onset()
+        except Exception as e:
+            logger.warning("Onset callback error: %s", e)
+        finally:
+            self._dispatching = False
 
     def _dispatch_detected(self) -> None:
         """Run the detection callback off the PortAudio callback thread.
@@ -199,6 +239,23 @@ class WakeWordListener:
             # Idle ambient audio feeds the rolling noise floor (the
             # wake word stream only runs while the app is idle).
             GLOBAL_ENV.update_from_samples(indata)
+
+            # Speech-onset detection (session mode): voice above the
+            # calibrated silence line starts the next recording.
+            if self._onset_enabled and not self._paused and not self._dispatching:
+                chunk = indata[:, 0] if indata.ndim > 1 else indata
+                rms = float(np.sqrt(np.mean(
+                    np.asarray(chunk, dtype=np.float64) ** 2)))
+                db = float("-inf") if rms == 0.0 else float(
+                    20.0 * np.log10(max(rms, 1e-12)))
+                if self._onset_detector.process_chunk(db):
+                    logger.info("Speech onset detected — starting recording.")
+                    self._dispatching = True
+                    threading.Thread(
+                        target=self._dispatch_onset,
+                        daemon=True,
+                        name="speech-onset-dispatch",
+                    ).start()
 
             # Post-resume cooldown — block detection for 3s after resume
             import time

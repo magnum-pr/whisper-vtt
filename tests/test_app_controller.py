@@ -1284,3 +1284,203 @@ class TestEnvironmentIntegration:
         with patch("src.app_controller.GLOBAL_ENV.consume_device_change") as consume:
             controller._handle_device_change()
         consume.assert_called_once()
+
+
+# ── Dictation sessions ──────────────────────────────────────────────
+
+
+class TestDictationSession:
+    def _controller(self, transcribe_results, output_mode=OutputMode.AUTO_SEND):
+        transcription = MagicMock()
+        transcription.transcribe.side_effect = transcribe_results
+        output = MagicMock()
+        output.mode = output_mode
+        controller = AppController(
+            config=make_wake_word_config(),
+            tray=MagicMock(),
+            hotkey_listener=MagicMock(),
+            audio_capture=MagicMock(),
+            vad_engine=MagicMock(),
+            transcription_engine=transcription,
+            output_handler=output,
+            wake_word_listener=MagicMock(),
+        )
+        return controller, output
+
+    def _buffer(self):
+        return AudioBuffer(
+            samples=np.zeros(16000, dtype=np.float32),
+            sample_rate=16000,
+        )
+
+    def test_session_start_is_not_delivered_or_journaled(self):
+        controller, output = self._controller(["start a new session for AlignMe website"])
+        with patch("src.app_controller.append_dictation") as append:
+            controller._do_transcribe(self._buffer())
+        append.assert_not_called()
+        output.deliver.assert_not_called()
+        assert controller._session is not None
+        assert controller._session.title == "AlignMe website"
+
+    def test_items_accumulate_and_count_updates(self):
+        controller, output = self._controller([
+            "start a new session for homepage",
+            "reorder the hero section",
+            "fix the pricing table",
+        ])
+        controller._do_transcribe(self._buffer())
+        controller._do_transcribe(self._buffer())
+        controller._do_transcribe(self._buffer())
+        assert controller._session.items == [
+            "reorder the hero section",
+            "fix the pricing table",
+        ]
+        # no delivery of items, menu bar shows count
+        assert output.deliver.call_count == 0
+        controller._tray.set_session_indicator.assert_called_with("2")
+
+    def test_thats_all_commits_to_dropbox_and_hands_off(self):
+        controller, output = self._controller([
+            "start a new session for alignme",
+            "reorder hero",
+            "that's all",
+        ])
+        with patch("src.app_controller.append_dictation") as append:
+            controller._do_transcribe(self._buffer())
+            controller._do_transcribe(self._buffer())
+            controller._do_transcribe(self._buffer())
+
+        session_call = [
+            c for c in append.call_args_list
+            if c.kwargs.get("kind") == "session"
+        ]
+        assert len(session_call) == 1
+        assert session_call[0].kwargs["title"] == "alignme"
+        assert session_call[0].kwargs["items"] == ["reorder hero"]
+        # hands off to pi
+        output.deliver.assert_called_once_with("process my dictations")
+        assert controller._session is None
+
+    def test_scratch_drops_last_item(self):
+        controller, output = self._controller([
+            "start a new session",
+            "first item",
+            "keep this one",
+            "scratch that",
+        ])
+        controller._do_transcribe(self._buffer())
+        controller._do_transcribe(self._buffer())
+        controller._do_transcribe(self._buffer())
+        controller._do_transcribe(self._buffer())
+        assert controller._session.items == ["first item"]
+
+    def test_timeout_auto_commits(self):
+        controller, output = self._controller([
+            "start a new session for timeout test",
+            "one item",
+        ])
+        with patch("src.app_controller.append_dictation"):
+            controller._do_transcribe(self._buffer())
+            controller._do_transcribe(self._buffer())
+
+        with patch("src.app_controller.append_dictation") as append, \
+             patch("src.app_controller.time.monotonic",
+                   return_value=controller._session_last_activity + 61.0):
+            controller._check_session_timeout()
+
+        session_call = [
+            c for c in append.call_args_list
+            if c.kwargs.get("kind") == "session"
+        ]
+        assert len(session_call) == 1
+        assert controller._session is None
+
+    def test_timeout_ignored_while_recording(self):
+        controller, output = self._controller([
+            "start a new session for busy test",
+            "one item",
+        ])
+        with patch("src.app_controller.append_dictation"):
+            controller._do_transcribe(self._buffer())
+            controller._do_transcribe(self._buffer())
+        controller._status = AppStatus.RECORDING
+        with patch("src.app_controller.append_dictation") as append, \
+             patch("src.app_controller.time.monotonic",
+                   return_value=controller._session_last_activity + 61.0):
+            controller._check_session_timeout()
+        append.assert_not_called()
+        assert controller._session is not None
+
+    def test_finish_cycle_arms_onset_in_session(self):
+        controller, output = self._controller(["start a new session for onset test"])
+        listener = controller._wake_word_listener
+        controller._do_transcribe(self._buffer())
+        # listener resumed with onset enabled (session open)
+        listener.resume.assert_called_once()
+        assert listener.set_onset_enabled.call_args_list[-1].args[0] is True
+
+    def test_finish_cycle_disarms_onset_after_commit(self):
+        controller, output = self._controller([
+            "start a new session for disarm test",
+            "item",
+            "that's all",
+        ])
+        with patch("src.app_controller.append_dictation"):
+            controller._do_transcribe(self._buffer())
+            controller._do_transcribe(self._buffer())
+            controller._do_transcribe(self._buffer())
+        listener = controller._wake_word_listener
+        assert listener.set_onset_enabled.call_args_list[-1].args[0] is False
+
+    def test_empty_session_commit_does_not_dropbox(self):
+        controller, output = self._controller([
+            "start a new session for empty test",
+            "that's all",
+        ])
+        with patch("src.app_controller.append_dictation") as append:
+            controller._do_transcribe(self._buffer())
+            controller._do_transcribe(self._buffer())
+        append.assert_not_called()
+        output.deliver.assert_not_called()
+        assert controller._session is None
+
+    def test_new_session_mid_session_commits_previous(self):
+        controller, output = self._controller([
+            "start a new session for first",
+            "first item",
+            "start a new session for second",
+        ])
+        with patch("src.app_controller.append_dictation") as append:
+            controller._do_transcribe(self._buffer())
+            controller._do_transcribe(self._buffer())
+            controller._do_transcribe(self._buffer())
+        session_calls = [
+            c for c in append.call_args_list
+            if c.kwargs.get("kind") == "session"
+        ]
+        assert len(session_calls) == 1
+        assert session_calls[0].kwargs["title"] == "first"
+        assert controller._session.title == "second"
+        assert controller._session.items == []
+
+    def test_onset_callback_starts_recording(self):
+        controller, output = self._controller([])
+        controller._on_speech_onset()
+        assert controller.status == AppStatus.RECORDING
+
+    def test_stop_commits_open_session_to_dropbox(self):
+        controller, output = self._controller([
+            "start a new session for exit test",
+            "unfinished item",
+        ])
+        with patch("src.app_controller.append_dictation") as append:
+            controller._do_transcribe(self._buffer())
+            controller._do_transcribe(self._buffer())
+            append.reset_mock()
+            controller.stop()
+        session_call = [
+            c for c in append.call_args_list
+            if c.kwargs.get("kind") == "session"
+        ]
+        assert len(session_call) == 1
+        assert session_call[0].kwargs["items"] == ["unfinished item"]

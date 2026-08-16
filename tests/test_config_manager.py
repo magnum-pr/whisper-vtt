@@ -501,3 +501,32 @@ mode = "clipboard"
 device_name = "{value}"
 """))
             assert config.audio_device_name is None, value
+
+
+class TestSessionSection:
+    def test_default_timeout(self):
+        config = load_config(_write_config_toml("""\
+[output]
+mode = "clipboard"
+"""))
+        assert config.session_timeout_s == 60.0
+
+    def test_timeout_parsed(self):
+        config = load_config(_write_config_toml("""\
+[output]
+mode = "clipboard"
+
+[session]
+timeout_s = 90
+"""))
+        assert config.session_timeout_s == 90.0
+
+    def test_invalid_timeout_falls_back(self):
+        config = load_config(_write_config_toml("""\
+[output]
+mode = "clipboard"
+
+[session]
+timeout_s = -1
+"""))
+        assert config.session_timeout_s == 60.0

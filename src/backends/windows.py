@@ -526,9 +526,21 @@ class WindowsSystemTray:
         if self._tray_icon is not None:
             self._tray_icon.icon = self._generate_icon(status)
 
-    def show_notification(self, title: str, message: str, *, play_sound: bool = True) -> None:
-        """Show a balloon notification with an optional system beep."""
-        if self._tray_icon is not None:
+    def show_notification(
+        self,
+        title: str,
+        message: str,
+        *,
+        play_sound: bool = True,
+        sound: Optional[str] = None,
+        notify: bool = True,
+    ) -> None:
+        """Show a balloon notification with an optional system beep.
+
+        `sound` and `notify` are macOS conveniences — accepted and
+        ignored here for backend parity.
+        """
+        if notify and self._tray_icon is not None:
             try:
                 self._tray_icon.notify(message, title)
             except Exception as e:

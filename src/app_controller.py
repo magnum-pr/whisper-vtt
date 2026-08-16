@@ -4,10 +4,16 @@ State flow:
     Idle → Recording → Transcribing → Delivering → Idle
       ↑        │              │             │
       └────────┴──────────────┴─────────────┘  (any error → Idle)
+
+Dictation sessions: "start a new session for X" opens a session; each
+utterance appends an item (speech onset re-arms, no wake word needed);
+"that's all" commits the compiled list to the drop box and hands it to
+pi. Idle timeout auto-commits.
 """
 
 import logging
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -27,6 +33,7 @@ from src.dropbox import append_dictation
 from src.environment import GLOBAL_ENV
 from src.output_trigger import extract_no_send_intent, extract_send_intent
 from src.paths import PathResolver
+from src.session import SessionState, is_scratch, is_session_end, parse_session_start
 from src.transcription_engine import TranscriptionEngine, TranscriptionError
 from src.vad_engine import VADEngine
 
@@ -81,6 +88,11 @@ class AppController:
 
         if self._wake_word_listener:
             self._wake_word_listener.set_on_detected(self._on_wake_word)
+            self._wake_word_listener.set_on_onset(self._on_speech_onset)
+
+        # Dictation session ("start a new session for X")
+        self._session: Optional[SessionState] = None
+        self._session_last_activity: float = 0.0
 
         # Push-to-talk tracking
         self._push_to_talk_active: bool = False
@@ -116,6 +128,16 @@ class AppController:
     def stop(self) -> None:
         """Stop the application gracefully."""
         logger.info("AppController stopping.")
+        # Commit an open session to the drop box before exiting — work
+        # is never lost; pi picks it up on the next 'process my dictations'.
+        if self._session is not None and self._session.items:
+            append_dictation(
+                f"Session: {self._session.title}",
+                kind="session",
+                title=self._session.title,
+                items=list(self._session.items),
+            )
+        self._session = None
         with self._lock:
             self._status = AppStatus.IDLE
             self._pending_transcribe.clear()
@@ -137,6 +159,7 @@ class AppController:
         """
         self._reload_config_if_changed()
         self._handle_device_change()
+        self._check_session_timeout()
         buffer = None
         with self._lock:
             if not self._pending_transcribe:
@@ -263,6 +286,12 @@ class AppController:
             logger.info("Wake word triggered — starting recording.")
             self._start_recording()
 
+    def _on_speech_onset(self) -> None:
+        """Speech onset detected (session mode) — start recording."""
+        if self._status == AppStatus.IDLE:
+            logger.info("Speech onset triggered — starting recording.")
+            self._start_recording()
+
     # ── Recording flow ─────────────────────────────────────────────────
 
     def _start_recording(self) -> None:
@@ -385,17 +414,45 @@ class AppController:
         except TranscriptionError as e:
             logger.error("Transcription failed: %s", e)
             self._tray.show_notification("Whisper VTT", f"Transcription error: {e}")
-            self._set_status(AppStatus.IDLE)
-            if self._wake_word_listener:
-                self._wake_word_listener.resume()
+            self._finish_cycle()
             return
 
         if text:
-            # Drop box side channel — every transcription is journaled for
-            # pi's whisper-vtt skill (tasks, lessons, journal, status).
-            # Never blocks or raises; the paste/send path is primary.
-            # In protected mode the spoken 'Enter' trigger is a command,
-            # not dictation — strip it so the skill never routes it.
+            self._route_transcription(text)
+
+        self._finish_cycle()
+
+    def _finish_cycle(self) -> None:
+        """Return to idle after a dictation cycle.
+
+        Re-arms speech onset when a session is open, so the next
+        utterance starts recording without a wake word; otherwise the
+        listener resumes in plain wake word mode.
+        """
+        self._set_status(AppStatus.IDLE)
+        logger.info("Dictation cycle complete.")
+        logger.info("─" * 50)
+
+        if self._wake_word_listener:
+            if self._session is not None:
+                threshold = GLOBAL_ENV.silence_threshold_db(
+                    self._config.calibration_margin_db
+                )
+                self._wake_word_listener.set_onset_enabled(True, threshold)
+            else:
+                self._wake_word_listener.set_onset_enabled(False)
+            self._wake_word_listener.resume()
+
+    # ── Dictation session routing ──────────────────────────────────────
+
+    def _route_transcription(self, text: str) -> None:
+        """Route a transcription: session commands vs. plain dictation."""
+        if self._session is None:
+            topic = parse_session_start(text)
+            if topic is not None:
+                self._start_session(topic)
+                return
+            # Plain single dictation: journal + deliver as usual.
             journal_text = text
             if self._output_handler.mode == OutputMode.PROTECTED:
                 journal_text, _ = extract_send_intent(text)
@@ -405,13 +462,135 @@ class AppController:
             if journal_text:
                 append_dictation(journal_text)
             self._deliver_text(text)
+            return
 
-        self._set_status(AppStatus.IDLE)
-        logger.info("Dictation cycle complete.")
-        logger.info("─" * 50)
+        # Session is open — commands first.
+        if is_session_end(text):
+            self._commit_session(timed_out=False)
+            return
+        if is_scratch(text):
+            self._scratch_item()
+            return
+        topic = parse_session_start(text)
+        if topic is not None:
+            # "start a new session for X" mid-session: commit the
+            # current one, open a fresh one.
+            self._commit_session(timed_out=False)
+            self._start_session(topic)
+            return
 
-        if self._wake_word_listener:
-            self._wake_word_listener.resume()
+        item = text.strip()
+        if item:
+            self._session.items.append(item)
+            self._session_last_activity = time.monotonic()
+            self._tray.set_session_indicator(str(len(self._session.items)))
+            logger.info(
+                "Session '%s' item %d: %r",
+                self._session.title,
+                len(self._session.items),
+                item[:80],
+            )
+            self._tray.show_notification(
+                "Whisper VTT",
+                f"Added ({len(self._session.items)}) to "
+                f"'{self._session.title}'",
+                play_sound=True,
+                sound="/System/Library/Sounds/Tink.aiff",
+                notify=False,
+            )
+
+    def _start_session(self, topic: str) -> None:
+        """Open a dictation session."""
+        self._session = SessionState(title=topic)
+        if not self._session.title:
+            self._session.title = self._session.default_title()
+        self._session_last_activity = time.monotonic()
+        self._tray.set_session_indicator("●")
+        self._tray.show_notification(
+            "Whisper VTT",
+            f"Session started: {self._session.title} — listening…",
+            play_sound=True,
+        )
+        logger.info("Session started: '%s'", self._session.title)
+
+    def _scratch_item(self) -> None:
+        """Drop the last session item ("scratch that")."""
+        self._session_last_activity = time.monotonic()
+        if self._session.items:
+            removed = self._session.items.pop()
+            self._tray.set_session_indicator(
+                str(len(self._session.items)) if self._session.items else "●"
+            )
+            self._tray.show_notification(
+                "Whisper VTT",
+                f"Removed: {removed}",
+                play_sound=True,
+                sound="/System/Library/Sounds/Tink.aiff",
+            )
+            logger.info("Scratched session item: %r", removed)
+        else:
+            self._tray.show_notification(
+                "Whisper VTT",
+                "Nothing to scratch.",
+                play_sound=True,
+                sound="/System/Library/Sounds/Tink.aiff",
+            )
+
+    def _commit_session(self, timed_out: bool = False) -> None:
+        """Close the session and hand the compiled list to pi.
+
+        The list lands in the drop box as a structured session entry;
+        pi's whisper-vtt skill files it under a titled task-list
+        heading. A 'process my dictations' message is delivered so pi
+        picks it up immediately (Enter depends on the output mode).
+        """
+        session = self._session
+        self._session = None
+        self._tray.set_session_indicator("")
+
+        if session is None:
+            return
+        items = [item for item in session.items if item.strip()]
+        if not items:
+            self._tray.show_notification(
+                "Whisper VTT",
+                "Session ended — nothing captured.",
+                play_sound=True,
+            )
+            logger.info("Session '%s' ended empty.", session.title)
+            return
+
+        append_dictation(
+            f"Session: {session.title}",
+            kind="session",
+            title=session.title,
+            items=items,
+        )
+        # Hand off to pi immediately.
+        self._deliver_text("process my dictations")
+
+        message = (
+            f"Session committed: {len(items)} item(s) → "
+            f"'{session.title}' task list"
+        )
+        if timed_out:
+            message = f"Session timed out — {message}"
+        self._tray.show_notification(
+            "Whisper VTT", message, play_sound=True,
+        )
+        logger.info(message)
+
+    def _check_session_timeout(self) -> None:
+        """Auto-commit an open session after idle timeout (no work lost)."""
+        if self._session is None or self._status != AppStatus.IDLE:
+            return
+        if time.monotonic() - self._session_last_activity >= self._config.session_timeout_s:
+            logger.info(
+                "Session '%s' idle timeout (%.0fs) — auto-committing.",
+                self._session.title,
+                self._config.session_timeout_s,
+            )
+            self._commit_session(timed_out=True)
 
     def _deliver_text(self, text: str) -> None:
         preview = text if len(text) <= 50 else text[:50] + "..."

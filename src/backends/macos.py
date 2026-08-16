@@ -580,6 +580,7 @@ class MacSystemTray:
     def __init__(self, title: str = "Whisper VTT"):
         self._title = title
         self._status = AppStatus.IDLE
+        self._session_text: Optional[str] = ""
         self._on_exit = None
         self._app = None
 
@@ -595,8 +596,20 @@ class MacSystemTray:
         if self._app is not None:
             self._update_icon()
 
+    def set_session_indicator(self, text: Optional[str]) -> None:
+        """Show session state in the menu bar (item count or armed dot),
+        or '' to clear. rumps renders app.title next to the icon."""
+        self._session_text = text or ""
+        if self._app is not None:
+            self._app.title = self._session_text
+
     def show_notification(
-        self, title: str, message: str, *, play_sound: bool = True
+        self,
+        title: str,
+        message: str,
+        *,
+        play_sound: bool = True,
+        sound: Optional[str] = None,
     ) -> None:
         try:
             esc_title = title.replace('"', '\\"')
@@ -610,8 +623,9 @@ class MacSystemTray:
             logger.debug("Notification failed: %s", e)
         if play_sound:
             try:
+                path = sound or "/System/Library/Sounds/Glass.aiff"
                 subprocess.run(
-                    ["afplay", "/System/Library/Sounds/Glass.aiff"],
+                    ["afplay", path],
                     capture_output=True, timeout=2)
             except Exception as e:
                 logger.debug("Beep failed: %s", e)

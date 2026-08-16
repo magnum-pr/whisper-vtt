@@ -23,6 +23,7 @@ DEFAULT_WAKE_WORD_THRESHOLD = 1e-20
 DEFAULT_AUDIO_DEVICE_NAME: Optional[str] = None
 DEFAULT_REFRESH_INTERVAL_S = 120.0
 DEFAULT_CALIBRATION_MARGIN_DB = 8.0
+DEFAULT_SESSION_TIMEOUT_S = 60.0
 
 # Valid values
 VALID_MODIFIERS = frozenset({"ctrl", "shift", "alt", "win"})
@@ -172,6 +173,18 @@ def _validate_calibration_margin(value) -> float:
     return DEFAULT_CALIBRATION_MARGIN_DB
 
 
+def _validate_session_timeout(value) -> float:
+    """Validate session idle timeout. Must be a positive number."""
+    if isinstance(value, (int, float)) and value > 0:
+        return float(value)
+    logger.warning(
+        "Invalid session_timeout_s %r (expected positive number). Using default: %.0f.",
+        value,
+        DEFAULT_SESSION_TIMEOUT_S,
+    )
+    return DEFAULT_SESSION_TIMEOUT_S
+
+
 def _validate_paste_target(value) -> str:
     """Validate paste target. Any non-empty string; special values:
     'frontmost' (default) and 'pi' (auto-resolve the pi host app)."""
@@ -305,6 +318,14 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
         environment_section.get("calibration_margin_db", DEFAULT_CALIBRATION_MARGIN_DB)
     )
 
+    # Parse [session] section
+    session_section = data.get("session", {})
+    if not isinstance(session_section, dict):
+        session_section = {}
+    session_timeout_s = _validate_session_timeout(
+        session_section.get("timeout_s", DEFAULT_SESSION_TIMEOUT_S)
+    )
+
     return AppConfig(
         hotkey=HotkeyCombo(modifiers=modifiers, key=key),
         recording_mode=recording_mode,
@@ -318,6 +339,7 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
         paste_target=paste_target,
         refresh_interval_s=refresh_interval_s,
         calibration_margin_db=calibration_margin_db,
+        session_timeout_s=session_timeout_s,
     )
 
 
@@ -353,6 +375,9 @@ device_name = "{config.audio_device_name or ''}"
 [environment]
 refresh_interval_s = {config.refresh_interval_s:.0f}
 calibration_margin_db = {config.calibration_margin_db:.1f}
+
+[session]
+timeout_s = {config.session_timeout_s:.0f}
 """
 
 

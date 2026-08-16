@@ -16,8 +16,13 @@ DROPBOX_DIR = os.path.expanduser("~/.local/whisper-vtt/inbox")
 DROPBOX_FILE = os.path.join(DROPBOX_DIR, "dictations.jsonl")
 
 
-def append_dictation(text: str, timestamp: float | None = None) -> dict:
+def append_dictation(
+    text: str, timestamp: float | None = None, **extra
+) -> dict:
     """Append one transcription entry to the drop box.
+
+    Extra kwargs are stored as additional JSON fields — e.g. session
+    commits carry kind/title/items for pi's whisper-vtt skill.
 
     Never raises — the drop box is a side channel; a failure must not
     break the paste/send path.
@@ -25,6 +30,7 @@ def append_dictation(text: str, timestamp: float | None = None) -> dict:
     entry = {
         "ts": timestamp if timestamp is not None else time.time(),
         "text": text,
+        **extra,
     }
     try:
         os.makedirs(DROPBOX_DIR, exist_ok=True)

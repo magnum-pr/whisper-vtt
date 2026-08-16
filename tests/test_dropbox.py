@@ -52,3 +52,34 @@ def test_append_preserves_unicode():
     os.system("rm -rf /tmp/whisper-test-inbox")
     dropbox.append_dictation("journal: Sharon said “héaling” 🌿")
     assert dropbox.read_dictations()[0]["text"] == "journal: Sharon said “héaling” 🌿"
+
+
+def test_session_entry_roundtrip():
+    """Session commits carry kind/title/items through the drop box."""
+    import json
+
+    from src.dropbox import DROPBOX_FILE, append_dictation, read_dictations
+
+    original = DROPBOX_FILE
+    try:
+        import src.dropbox as db
+        db.DROPBOX_FILE = db.DROPBOX_FILE + ".session-test"
+        append_dictation(
+            "Session: alignme",
+            kind="session",
+            title="alignme",
+            items=["item a", "item b"],
+        )
+        entries = read_dictations()
+        assert len(entries) == 1
+        assert entries[0]["kind"] == "session"
+        assert entries[0]["title"] == "alignme"
+        assert entries[0]["items"] == ["item a", "item b"]
+    finally:
+        import src.dropbox as db
+        import os
+        try:
+            os.remove(db.DROPBOX_FILE)
+        except OSError:
+            pass
+        db.DROPBOX_FILE = original

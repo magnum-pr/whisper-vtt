@@ -61,6 +61,7 @@ class AppConfig:
     paste_target: str = "frontmost"  # "frontmost" | "pi" | process name (macOS)
     refresh_interval_s: float = 120.0  # environment refresh ticks (device check)
     calibration_margin_db: float = 8.0  # VAD silence line = noise floor + margin
+    session_timeout_s: float = 60.0  # idle auto-commit for dictation sessions
 
 
 @dataclass(frozen=True)

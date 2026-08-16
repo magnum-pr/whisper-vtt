@@ -94,3 +94,11 @@
 - [x] Output-paired input routing — `src/environment.py`: in auto mode the mic follows the current default OUTPUT (AirPods out → AirPods mic; MacBook speakers → MacBook mic), MacBook mic as default fallback, OS default input as last resort. Pinned `device_name` still works. Resolved fresh at every stream open; recorder and wake word both use it.
 - [x] Environment refresher — daemon tick every `refresh_interval_s` (default 120s): latches paired-input changes (controller restarts the wake word stream while idle); rolling noise floor (20th percentile, 120s window, idle chunks only) → VAD silence threshold = floor + `calibration_margin_db` (default 8 dB), clamped [-60, -28], pushed at every recording start.
 - [x] Config: `[environment]` section + `device_name = "auto"` semantics.
+
+## Done (2026-08-16 evening) — dictation session mode
+
+- [x] Session trigger — "jarvis, start a new session for <topic>" parsed from the transcription (`src/session.py`), topic becomes the title; trigger text never pasted/journaled.
+- [x] Speech-onset re-arming — `src/speech_onset.py`: while a session is open the wake word stream doubles as the armed listener; 3 consecutive chunks above silence-line+6dB start the next recording (2s cooldown, arm cooldown, spike reset).
+- [x] Session controls — "scratch that" drops the last item; "that's all" (and variants) commits; a new session trigger mid-session commits the previous one first.
+- [x] Commit — structured drop box entry (kind=session, title, items) + auto-delivery of "process my dictations" so pi files the compiled task list immediately. Idle timeout (config `[session] timeout_s = 60`) auto-commits — no work lost. Quit also commits to the drop box.
+- [x] Feedback — session-start chime + notification; per-item Tink tick + menu bar item count (rumps title); commit notification.

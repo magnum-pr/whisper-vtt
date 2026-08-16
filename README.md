@@ -82,13 +82,48 @@ python -m src
 ```
 
 (Windows uses pystray + pywin32; the full suite includes Windows-only
-tests that are skipped on macOS.)
+  tests that are skipped on macOS.)
 
 ### Portable distribution
 
 ```bash
 python scripts/build.py   # → dist/Whisper-VTT/ — run from a folder, no install
 ```
+
+### First run — what gets set up
+
+On first launch whisper writes `config.toml` next to the app (source
+runs) or under `~/Library/Application Support/Whisper-VTT/` (packaged
+macOS builds), containing **every setting with its default** — the full
+reference is in [Configuration](#configuration). Nothing else is
+created; the app works out of the box with defaults.
+
+For the pi workflow, the two settings that matter most:
+
+```toml
+[recording]
+mode = "wake_word"    # say "jarvis" to dictate, hands-free
+
+[output]
+mode = "auto_send"    # paste + Enter — every dictation is a message to pi
+paste_target = "pi"   # activate VS Code / Terminal and paste there
+```
+
+Everything else ships with the recommended behavior already:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `[audio] device_name` | `"auto"` | Mic follows what you're hearing from (AirPods → AirPods mic; MacBook speakers → MacBook mic) — no device setup step |
+| `[environment] refresh_interval_s` | `120` | How often whisper re-checks devices + recalibrates the ambient noise floor |
+| `[environment] calibration_margin_db` | `8.0` | Silence line sits this far above the ambient floor — handles fans/AC automatically |
+| `[session] sticky` | `true` | After any dictation, whisper stays armed for follow-ups (no repeat wake word) |
+| `[session] lapse_s` | `20` | Sticky follow-up window — silence past this and "jarvis" is required again |
+| `[session] timeout_s` | `60` | Idle auto-commit for compile sessions — work is never lost |
+| `[wake_word] phrase` | `"jarvis"` | The trigger word |
+| `[model] path` | `models/ggml-base.en.bin` | The transcription model (tiny/base/small trade size vs. accuracy) |
+
+Single-instance protection is automatic: launching whisper ends any
+previous instance (one mic owner at a time).
 
 ---
 

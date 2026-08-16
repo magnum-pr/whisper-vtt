@@ -50,6 +50,8 @@ class AppController:
         self._status: AppStatus = AppStatus.IDLE
         self._lock = threading.Lock()
         self._status_callback: object = None  # called on status changes
+        # Guards against double-dispatching the auto-stop worker
+        self._stop_dispatched = False
 
         # Transcription queue — processed synchronously on main thread
         self._pending_transcribe: list[AudioBuffer] = []
@@ -183,6 +185,7 @@ class AppController:
             self._wake_word_listener.pause()
 
         self._vad_engine.reset()
+        self._stop_dispatched = False
 
         try:
             self._audio_capture.start_recording()
@@ -228,16 +231,32 @@ class AppController:
     # ── Audio chunk callback (VAD) ─────────────────────────────────────
 
     def _on_audio_chunk(self, chunk) -> None:
-        """Process each audio chunk through VAD."""
+        """Process each audio chunk through VAD.
+
+        NOTE: this runs inside the recording stream's PortAudio callback.
+        _stop_recording closes the stream — doing that from within the
+        stream's own callback deadlocks PortAudio (the process freezes,
+        mic stays wedged). So the stop is handed off to a worker thread
+        and this callback returns immediately.
+        """
         silence_detected = self._vad_engine.process_chunk(chunk)
-        if silence_detected and self._status == AppStatus.RECORDING:
+        if (
+            silence_detected
+            and self._status == AppStatus.RECORDING
+            and not self._stop_dispatched
+        ):
             logger.info("Silence detected, auto-stopping recording.")
             logger.debug(
                 "(peak %.1f dB, threshold %.1f dB)",
                 self._vad_engine.peak_db,
                 self._vad_engine.volume_threshold_db,
             )
-            self._stop_recording()
+            self._stop_dispatched = True
+            threading.Thread(
+                target=self._stop_recording,
+                daemon=True,
+                name="stop-recording",
+            ).start()
 
     # ── Transcription (runs synchronously on main thread) ─────────────
 

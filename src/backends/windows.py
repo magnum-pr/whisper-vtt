@@ -328,6 +328,7 @@ import logging
 import subprocess
 
 from src.models import OutputMode
+from src.output_trigger import extract_send_intent
 
 logger = logging.getLogger(__name__)
 
@@ -369,12 +370,22 @@ class WindowsOutputHandler:
         if not text:
             return
 
+        # auto_send guard-rail: Enter fires only when the dictation ends
+        # with the spoken word 'Enter' (stripped from the text).
+        should_send = False
+        if self._mode == OutputMode.AUTO_SEND:
+            text, should_send = extract_send_intent(text)
+            if not text:
+                return  # trigger alone — nothing to paste or send
+            if should_send:
+                logger.info("Send trigger detected — pressing Enter after paste.")
+
         # Set clipboard — this always happens regardless of mode
         self._set_clipboard(text)
 
         if self._mode in (OutputMode.AUTO_PASTE, OutputMode.AUTO_SEND):
             self._simulate_paste()
-        if self._mode == OutputMode.AUTO_SEND:
+        if should_send:
             self._simulate_enter()
 
     def _set_clipboard(self, text: str) -> None:

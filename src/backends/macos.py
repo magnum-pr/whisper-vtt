@@ -15,6 +15,7 @@ from typing import Callable, Optional
 from PIL import Image, ImageDraw
 
 from src.models import AppStatus, HotkeyCombo, HotkeyEvent, OutputMode
+from src.output_trigger import extract_send_intent
 
 logger = logging.getLogger(__name__)
 
@@ -230,10 +231,21 @@ class MacOutputHandler:
     def deliver(self, text: str) -> None:
         if not text:
             return
+
+        # auto_send guard-rail: Enter fires only when the dictation ends
+        # with the spoken word 'Enter' (stripped from the text).
+        should_send = False
+        if self._mode == OutputMode.AUTO_SEND:
+            text, should_send = extract_send_intent(text)
+            if not text:
+                return  # trigger alone — nothing to paste or send
+            if should_send:
+                logger.info("Send trigger detected — pressing Enter after paste.")
+
         self._set_clipboard(text)
         if self._mode in (OutputMode.AUTO_PASTE, OutputMode.AUTO_SEND):
             self._simulate_paste()
-        if self._mode == OutputMode.AUTO_SEND:
+        if should_send:
             self._simulate_enter()
 
     def _set_clipboard(self, text: str) -> None:

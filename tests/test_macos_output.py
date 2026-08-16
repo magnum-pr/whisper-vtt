@@ -39,10 +39,26 @@ def test_auto_paste_pastes_without_enter(mock_run):
 
 
 @patch("src.backends.macos.subprocess.run")
-def test_auto_send_pastes_then_enters(mock_run):
+def test_auto_send_pastes_then_enters_on_trigger(mock_run):
     handler = MacOutputHandler(mode=OutputMode.AUTO_SEND)
-    handler.deliver("hello")
+    handler.deliver("hello enter")
     scripts = _osascript_scripts(mock_run)
     assert len(scripts) == 2
     assert "keystroke" in scripts[0]
     assert "return" in scripts[1]
+    # clipboard received the STRIPPED text (trigger removed)
+    pbcopy = [
+        call_args for call_args in mock_run.call_args_list
+        if call_args.args and call_args.args[0][0] == "pbcopy"
+    ][0]
+    assert pbcopy.kwargs.get("input") == "hello"
+
+
+@patch("src.backends.macos.subprocess.run")
+def test_auto_send_without_trigger_pastes_only(mock_run):
+    handler = MacOutputHandler(mode=OutputMode.AUTO_SEND)
+    handler.deliver("hello world")
+    scripts = _osascript_scripts(mock_run)
+    assert len(scripts) == 1
+    assert "keystroke" in scripts[0]
+    assert "return" not in scripts[0]

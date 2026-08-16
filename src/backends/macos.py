@@ -215,10 +215,22 @@ class OutputError(Exception):
 
 
 class MacOutputHandler:
-    """Delivers transcribed text via pbcopy and optional Cmd+V paste."""
+    """Delivers transcribed text via pbcopy and optional Cmd+V paste.
 
-    def __init__(self, mode=OutputMode.AUTO_PASTE):
+    paste_target controls where the paste lands:
+    - "frontmost" (default): paste into whatever app is focused
+    - "pi": auto-resolve the running pi host (VS Code "Code" or
+      "Terminal") and activate it first; if pi is already frontmost,
+      paste directly without stealing focus
+    - an explicit process name (e.g. "Code", "Terminal"): activate that
+      process first
+    Falls back to a plain frontmost paste when the target can't be
+    resolved — the text is always on the clipboard either way.
+    """
+
+    def __init__(self, mode=OutputMode.AUTO_PASTE, paste_target: str = "frontmost"):
         self._mode = mode
+        self._paste_target = paste_target
 
     @property
     def mode(self) -> OutputMode:
@@ -257,7 +269,53 @@ class MacOutputHandler:
         except (subprocess.SubprocessError, FileNotFoundError) as e:
             raise OutputError(f"Could not set clipboard: {e}") from e
 
+    def _resolve_target(self):
+        """Resolve paste_target to a process name to activate.
+
+        Returns None when the paste should go to the frontmost app
+        directly (default mode, pi already front, or target missing).
+        """
+        target = self._paste_target
+        if target == "frontmost":
+            return None
+        front = _frontmost_process_name()
+        if target == "pi":
+            if front in PI_HOST_CANDIDATES:
+                return None  # pi already front — no focus yank
+            gui = _gui_process_names()
+            for candidate in PI_HOST_CANDIDATES:
+                if candidate in gui:
+                    return candidate
+            return None  # no pi host running — plain paste
+        # Explicit process name
+        if front == target:
+            return None
+        gui = _gui_process_names()
+        return target if target in gui else None
+
     def _simulate_paste(self) -> None:
+        target = self._resolve_target()
+        if target is not None:
+            script = (
+                'tell application "System Events"\n'
+                f'tell process "{target}"\n'
+                'set frontmost to true\n'
+                'keystroke "v" using command down\n'
+                'end tell\n'
+                'end tell'
+            )
+            try:
+                subprocess.run(
+                    ["osascript", "-e", script],
+                    check=True, capture_output=True, timeout=8)
+                logger.info("Activated %s and simulated Cmd+V paste.", target)
+                return
+            except subprocess.TimeoutExpired:
+                logger.warning("Targeted paste timed out — falling back to plain paste.")
+            except (subprocess.SubprocessError, FileNotFoundError) as e:
+                logger.warning("Targeted paste failed (%s) — falling back to plain paste.", e)
+
+        # Plain frontmost paste (default + fallback path)
         try:
             subprocess.run(
                 ["osascript", "-e",
@@ -292,6 +350,36 @@ STATUS_COLORS = {
     AppStatus.TRANSCRIBING: (255, 165, 0),
     AppStatus.ERROR: (128, 128, 128),
 }
+
+
+# Pi host apps, in preference order (VS Code reports as "Code").
+PI_HOST_CANDIDATES = ("Code", "Terminal")
+
+
+def _frontmost_process_name() -> str:
+    """Name of the frontmost GUI process, or '' on failure."""
+    try:
+        out = subprocess.run(
+            ["osascript", "-e",
+             'tell application "System Events" to get name of first '
+             'application process whose frontmost is true'],
+            capture_output=True, text=True, timeout=8)
+        return out.stdout.strip()
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return ""
+
+
+def _gui_process_names() -> list[str]:
+    """Names of all GUI (non-background) processes, or [] on failure."""
+    try:
+        out = subprocess.run(
+            ["osascript", "-e",
+             'tell application "System Events" to get name of every '
+             'application process whose background only is false'],
+            capture_output=True, text=True, timeout=8)
+        return [n.strip() for n in out.stdout.split(",") if n.strip()]
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return []
 
 
 class MacSystemTray:

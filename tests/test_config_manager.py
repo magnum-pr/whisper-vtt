@@ -371,3 +371,55 @@ class TestWriteDefaultConfig:
             assert loaded.hotkey.modifiers == DEFAULT_HOTKEY_MODIFIERS
         finally:
             tmp_path.unlink()
+
+
+class TestPasteTarget:
+    def test_paste_target_parsed(self):
+        toml_content = """\
+[output]
+mode = "auto_send"
+paste_target = "pi"
+"""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".toml", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(toml_content)
+            tmp_path = Path(f.name)
+        try:
+            config = load_config(tmp_path)
+            assert config.paste_target == "pi"
+        finally:
+            tmp_path.unlink()
+
+    def test_paste_target_defaults_to_frontmost(self):
+        toml_content = """\
+[output]
+mode = "clipboard"
+"""
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".toml", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(toml_content)
+            tmp_path = Path(f.name)
+        try:
+            config = load_config(tmp_path)
+            assert config.paste_target == "frontmost"
+        finally:
+            tmp_path.unlink()
+
+    def test_paste_target_roundtrips(self):
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".toml", delete=False, encoding="utf-8"
+        ) as f:
+            tmp_path = Path(f.name)
+        try:
+            from src.config_manager import config_to_toml, write_default_config
+            write_default_config(tmp_path)
+            # roundtrip a custom value through the serializer
+            config = load_config(tmp_path)
+            from dataclasses import replace
+            updated = replace(config, paste_target="Code")
+            written = config_to_toml(updated)
+            assert 'paste_target = "Code"' in written
+        finally:
+            tmp_path.unlink()

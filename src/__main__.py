@@ -394,7 +394,10 @@ def main() -> None:
 
     # ── Output handler ──────────────────────────────────────────────────
     logger.info("Initializing output handler...")
-    output_handler = OutputHandler(mode=config.output_mode)
+    output_handler = OutputHandler(
+        mode=config.output_mode,
+        paste_target=config.paste_target,
+    )
 
     # ── Transcription engine ─────────────────────────────────────────
     logger.info("Initializing transcription engine...")

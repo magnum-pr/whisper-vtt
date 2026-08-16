@@ -142,6 +142,18 @@ def _validate_audio_device_name(value) -> Optional[str]:
     return None
 
 
+def _validate_paste_target(value) -> str:
+    """Validate paste target. Any non-empty string; special values:
+    'frontmost' (default) and 'pi' (auto-resolve the pi host app)."""
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    logger.warning(
+        "Invalid paste_target %r (expected non-empty string). Using default: 'frontmost'.",
+        value,
+    )
+    return "frontmost"
+
+
 def _validate_model_path(value) -> Path:
     """Validate model path. Must be a non-empty string. Default: models/tiny.en.pt."""
     if isinstance(value, str) and value.strip():
@@ -221,6 +233,9 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
     output_mode = _validate_output_mode(
         output_section.get("mode", DEFAULT_OUTPUT_MODE.value)
     )
+    paste_target = _validate_paste_target(
+        output_section.get("paste_target", "frontmost")
+    )
 
     # Parse [vad] section
     vad_section = data.get("vad", {})
@@ -259,6 +274,7 @@ def load_config(config_path: Optional[Path] = None) -> AppConfig:
         wake_word=wake_word,
         wake_word_threshold=wake_word_threshold,
         audio_device_name=audio_device_name,
+        paste_target=paste_target,
     )
 
 
@@ -275,6 +291,7 @@ mode = "{config.recording_mode.value}"
 
 [output]
 mode = "{config.output_mode.value}"
+paste_target = "{config.paste_target}"
 
 [vad]
 silence_threshold_ms = {config.silence_threshold_ms}

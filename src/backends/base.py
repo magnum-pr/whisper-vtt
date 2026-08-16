@@ -41,7 +41,11 @@ class OutputBackend(ABC):
     """Delivers transcribed text to the user."""
 
     @abstractmethod
-    def __init__(self, mode: OutputMode = OutputMode.AUTO_PASTE): ...
+    def __init__(
+        self,
+        mode: OutputMode = OutputMode.AUTO_PASTE,
+        paste_target: str = "frontmost",
+    ): ...
 
     @property
     @abstractmethod

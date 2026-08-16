@@ -7,6 +7,7 @@ mode = "wake_word"
 
 [output]
 mode = "auto_send"
+paste_target = "pi"
 
 [vad]
 silence_threshold_ms = 3000

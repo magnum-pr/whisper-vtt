@@ -347,8 +347,13 @@ class WindowsOutputHandler:
     - CLIPBOARD: Sets clipboard text for manual paste by the user.
     """
 
-    def __init__(self, mode: OutputMode = OutputMode.AUTO_PASTE):
+    def __init__(
+        self, mode: OutputMode = OutputMode.AUTO_PASTE, paste_target: str = "frontmost"
+    ):
         self._mode = mode
+        # paste_target is a macOS concept (app activation). On Windows the
+        # paste always goes to the focused app; accept + ignore the value.
+        self._paste_target = paste_target
 
     @property
     def mode(self) -> OutputMode:

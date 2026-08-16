@@ -130,6 +130,7 @@ mode = "wake_word"    # "toggle" | "push_to_talk" | "wake_word"
 
 [output]
 mode = "auto_send"    # "clipboard" | "auto_paste" | "auto_send"
+paste_target = "pi"     # "frontmost" | "pi" | process name (macOS)
 
 [vad]
 silence_threshold_ms = 3000   # ms of continuous silence before auto-stop
@@ -166,8 +167,20 @@ device_name = "MacBook Pro Microphone"  # exact device name; "" = system default
 | Mode | Behavior |
 |---|---|
 | `clipboard` *(default)* | Text lands on the clipboard — you paste manually (Cmd+V / Ctrl+V) |
-| `auto_paste` | Copies to the clipboard **and** pastes into whatever app is focused; you press Enter yourself. Safe general-purpose mode |
+| `auto_paste` | Copies to the clipboard **and** pastes into the target app (see `paste_target`); you press Enter yourself. Safe general-purpose mode |
 | `auto_send` | Like `auto_paste`, plus an **Enter press — but only when you end your dictation with the spoken word "Enter"** (stripped from the text). It never sends unless you explicitly say the trigger |
+
+**`paste_target` — which app receives the paste (macOS):**
+
+| Value | Behavior |
+|---|---|
+| `"frontmost"` *(default)* | Paste into whatever app is focused (classic behavior) |
+| `"pi"` | Auto-resolve the running pi host (VS Code `"Code"` or `"Terminal"`) and activate it first. If pi is already frontmost, pastes directly without stealing focus |
+| a process name | e.g. `"Terminal"`, `"Code"` — activate that specific process first |
+
+If the target can't be resolved (pi not running, app name not found), the
+paste falls back to the frontmost app — the text is always on the
+clipboard either way.
 
 **The `auto_send` guard-rail:**
 
@@ -180,9 +193,9 @@ device_name = "MacBook Pro Microphone"  # exact device name; "" = system default
 - Trailing punctuation tolerated (*"…enter!"* still sends)
 - Word-boundary aware: *"center"* does **not** trigger
 
-⚠️ `auto_paste` / `auto_send` type into the **focused** app — keep the
-intended window frontmost. Even if a paste misses, the text is always on
-the clipboard as a fallback.
+⚠️ `auto_paste` / `auto_send` type into the resolved `paste_target` — keep
+that in mind for windows you don't want text injected into. Even if a
+paste misses, the text is always on the clipboard as a fallback.
 
 ### [vad] — silence auto-stop
 

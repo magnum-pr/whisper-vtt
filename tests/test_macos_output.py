@@ -62,3 +62,63 @@ def test_auto_send_without_trigger_pastes_only(mock_run):
     assert len(scripts) == 1
     assert "keystroke" in scripts[0]
     assert "return" not in scripts[0]
+
+
+# ── Paste-target resolution ────────────────────────────────────────────
+
+
+def _handler(target):
+    return MacOutputHandler(mode=OutputMode.AUTO_PASTE, paste_target=target)
+
+
+@patch("src.backends.macos._frontmost_process_name", return_value="")
+@patch("src.backends.macos._gui_process_names", return_value=[])
+def test_frontmost_target_resolves_to_none(mock_gui, mock_front):
+    assert _handler("frontmost")._resolve_target() is None
+
+
+@patch("src.backends.macos._frontmost_process_name", return_value="Code")
+def test_pi_target_no_activation_when_pi_already_front(mock_front):
+    # pi is frontmost — paste directly, no focus yank
+    assert _handler("pi")._resolve_target() is None
+
+
+@patch("src.backends.macos._frontmost_process_name", return_value="Slack")
+@patch("src.backends.macos._gui_process_names", return_value=["Code", "Slack", "Finder"])
+def test_pi_target_resolves_to_code(mock_gui, mock_front):
+    assert _handler("pi")._resolve_target() == "Code"
+
+
+@patch("src.backends.macos._frontmost_process_name", return_value="Slack")
+@patch("src.backends.macos._gui_process_names", return_value=["Slack", "Finder"])
+def test_pi_target_falls_back_when_no_host(mock_gui, mock_front):
+    assert _handler("pi")._resolve_target() is None
+
+
+@patch("src.backends.macos._frontmost_process_name", return_value="Slack")
+@patch("src.backends.macos._gui_process_names", return_value=["Terminal", "Slack"])
+def test_explicit_target_resolves_when_running(mock_gui, mock_front):
+    assert _handler("Terminal")._resolve_target() == "Terminal"
+
+
+@patch("src.backends.macos._frontmost_process_name", return_value="Slack")
+@patch("src.backends.macos._gui_process_names", return_value=["Slack"])
+def test_explicit_target_missing_returns_none(mock_gui, mock_front):
+    assert _handler("Terminal")._resolve_target() is None
+
+
+@patch("src.backends.macos._frontmost_process_name", return_value="Terminal")
+def test_explicit_target_already_front_returns_none(mock_front):
+    assert _handler("Terminal")._resolve_target() is None
+
+
+@patch("src.backends.macos.MacOutputHandler._resolve_target", return_value="Code")
+@patch("src.backends.macos.subprocess.run")
+def test_deliver_pastes_into_resolved_target(mock_run, mock_resolve):
+    handler = _handler("pi")
+    handler.deliver("hello")
+    scripts = _osascript_scripts(mock_run)
+    assert len(scripts) == 1
+    assert 'process "Code"' in scripts[0]
+    assert "set frontmost to true" in scripts[0]
+    assert 'keystroke "v" using command down' in scripts[0]

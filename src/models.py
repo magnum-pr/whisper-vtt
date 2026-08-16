@@ -44,6 +44,7 @@ class AppConfig:
     wake_word: str = "alexa"
     wake_word_threshold: float = 1e-30
     audio_device_name: Optional[str] = None  # saved device name; None = use system default
+    paste_target: str = "frontmost"  # "frontmost" | "pi" | process name (macOS)
 
 
 @dataclass(frozen=True)

@@ -349,6 +349,17 @@ def main() -> None:
     logger.info("Whisper VTT starting...")
 
     # ── Config ──────────────────────────────────────────────────────────
+    # First run: materialize config.toml so users can discover the
+    # settings (a missing file would otherwise silently run on defaults).
+    try:
+        default_config_path = PathResolver.config_path()
+        if not default_config_path.exists():
+            from src.config_manager import write_default_config
+            write_default_config(default_config_path)
+            logger.info("Wrote default config to %s", default_config_path)
+    except Exception as e:
+        logger.warning("Could not write default config: %s", e)
+
     try:
         config = load_config()
         logger.info(

@@ -1,5 +1,13 @@
 """Tests for OutputHandler."""
 
+
+import sys
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    sys.platform != "win32", reason="Windows backend test"
+)
+
 from unittest.mock import MagicMock, patch
 
 import pytest

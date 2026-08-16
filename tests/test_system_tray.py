@@ -1,5 +1,13 @@
 """Tests for SystemTray (icon generation and status logic)."""
 
+
+import sys
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    sys.platform != "win32", reason="Windows backend test"
+)
+
 from src.models import AppStatus
 from src.backends import STATUS_COLORS, SystemTray
 

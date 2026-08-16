@@ -1,0 +1,30 @@
+# Whisper VTT — example configuration.
+#
+# Copy to config.toml next to the app (or let the app create a default
+# on first run), then edit to taste. Every setting falls back to a sane
+# default — a missing or invalid value never crashes the app.
+
+[hotkey]
+modifiers = []        # any of: "ctrl", "shift", "alt", "win" ("win" = Cmd on macOS)
+key = "`"             # letters, digits, f1-f12, or names like "space", "enter", "backtick"
+
+[recording]
+mode = "toggle"       # "toggle" | "push_to_talk" | "wake_word"
+
+[output]
+mode = "auto_paste"   # "clipboard" | "auto_paste" | "auto_send"
+paste_target = "pi"   # "frontmost" | "pi" (auto-resolve VS Code/Terminal) | process name
+
+[vad]
+silence_threshold_ms = 3000   # ms of silence before auto-stop
+volume_threshold_db = -50.0   # quieter-than-this counts as silence (dB)
+
+[wake_word]
+phrase = "jarvis"     # the spoken trigger phrase
+threshold = 1e-20     # detection sensitivity — lower = stricter
+
+[model]
+path = "models/ggml-base.en.bin"   # any whisper.cpp GGML (.bin) model
+
+[audio]
+device_name = ""      # exact mic name from the startup list; "" = system default

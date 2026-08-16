@@ -84,20 +84,45 @@ whisper-vtt/
 
 ```bash
 # 1. Clone
-git clone https://github.com/LabidySabidy/whisper-vtt.git
+git clone https://github.com/magnum-pr/whisper-vtt.git
 cd whisper-vtt
 
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Download a whisper.cpp GGML model (tiny.en recommended for speed)
-python scripts/download_model.py tiny.en
+# 3. Download a whisper.cpp GGML model (base.en is the default — ~141MB)
+python scripts/download_model.py base.en
 
 # 4. Run
-python -m src
+./run.sh            # or: python -m src
 
 # 5. Press backtick (`) from any application and start speaking
 ```
+
+### macOS (primary target)
+
+Two one-time permissions are required — grant both, then relaunch:
+
+1. **Microphone** — System Settings → Privacy & Security → Microphone →
+   enable your terminal app. Without it, macOS hands the app a silent
+   audio stream.
+2. **Accessibility** — System Settings → Privacy & Security →
+   Accessibility → add your terminal app. Required for the global
+   hotkey (Quartz event tap) and for auto-paste.
+
+macOS extras:
+
+- **Wake word** — set `[recording] mode = "wake_word"` to trigger by
+  saying the phrase (`jarvis` by default).
+- **Auto-paste into pi** — `paste_target = "pi"` activates VS Code or
+  Terminal and pastes there (see [Configuration](#configuration)).
+- **Mic selection** — the startup prompt lets you pick an input device
+  and saves it to `[audio] device_name` (e.g. an audio interface with
+  nothing plugged in reads as pure silence — pick the built-in mic).
+
+> **Note on Rust-free setup:** this project needs no Rust toolchain or
+> brew packages — plain `pip install -r requirements.txt` is enough on
+> macOS and Windows.
 
 ---
 

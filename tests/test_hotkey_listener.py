@@ -1,6 +1,14 @@
 """Tests for HotkeyListener (logic tests, no Windows hook)."""
 
 
+import sys
+import pytest
+
+pytestmark = pytest.mark.skipif(
+    sys.platform != "win32", reason="Windows backend test"
+)
+
+
 from src.backends import KEY_NAME_TO_VK, HotkeyListener
 from src.models import HotkeyCombo
 

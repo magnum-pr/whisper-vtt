@@ -1,3 +1,4 @@
+import pytest
 """Tests for PathResolver."""
 
 import sys
@@ -11,9 +12,11 @@ class TestPathResolver:
     def test_base_path_source(self):
         """When running from source, base path is parent of src/."""
         base = PathResolver.base_path()
-        assert base.name == "Whisper-VTT"
+        # case-insensitive: the repo may be cloned as whisper-vtt or Whisper-VTT
+        assert base.name.lower() == "whisper-vtt"
         assert (base / "src" / "__init__.py").exists()
 
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows path test")
     def test_base_path_frozen(self):
         """When running from PyInstaller bundle, base path is exe directory."""
         with patch.object(sys, "frozen", True, create=True):
@@ -46,6 +49,7 @@ class TestPathResolver:
         result = PathResolver.log_path()
         assert result.name == "dictation.log"
 
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows path test")
     def test_frozen_resolve_ignores_src_structure(self):
         """When frozen, resolve uses exe directory, not src/ parent."""
         with patch.object(sys, "frozen", True, create=True):

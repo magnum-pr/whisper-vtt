@@ -540,13 +540,13 @@ class TestTranscription:
         output.deliver.assert_called_once_with("hello world")
         assert controller.status == AppStatus.IDLE
 
-    def test_journal_strips_send_trigger_in_auto_send(self):
+    def test_journal_strips_send_trigger_in_protected(self):
         from src.models import OutputMode
 
         transcription = MagicMock()
         transcription.transcribe.return_value = "task: fix deploy enter"
         output = MagicMock()
-        output.mode = OutputMode.AUTO_SEND
+        output.mode = OutputMode.PROTECTED
 
         controller = AppController(
             config=make_toggle_config(),
@@ -576,7 +576,7 @@ class TestTranscription:
         transcription = MagicMock()
         transcription.transcribe.return_value = "Enter."
         output = MagicMock()
-        output.mode = OutputMode.AUTO_SEND
+        output.mode = OutputMode.PROTECTED
 
         controller = AppController(
             config=make_toggle_config(),
@@ -625,6 +625,35 @@ class TestTranscription:
             controller._do_transcribe(buffer)
 
         # in non-send modes 'enter' is dictation content, not a command
+        append.assert_called_once_with("say enter")
+
+    def test_journal_keeps_enter_in_auto_send_on(self):
+        from src.models import OutputMode
+
+        transcription = MagicMock()
+        transcription.transcribe.return_value = "say enter"
+        output = MagicMock()
+        output.mode = OutputMode.AUTO_SEND
+
+        controller = AppController(
+            config=make_toggle_config(),
+            tray=MagicMock(),
+            hotkey_listener=MagicMock(),
+            audio_capture=MagicMock(),
+            vad_engine=MagicMock(),
+            transcription_engine=transcription,
+            output_handler=output,
+        )
+
+        buffer = AudioBuffer(
+            samples=np.zeros(16000, dtype=np.float32),
+            sample_rate=16000,
+        )
+
+        with patch("src.app_controller.append_dictation") as append:
+            controller._do_transcribe(buffer)
+
+        # on mode: 'enter' is always dictation content — journaled raw
         append.assert_called_once_with("say enter")
 
     def test_transcription_preview_truncated(self):

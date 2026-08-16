@@ -245,10 +245,10 @@ class MacOutputHandler:
         if not text:
             return
 
-        # auto_send guard-rail: Enter fires only when the dictation ends
+        # protected guard-rail: Enter fires only when the dictation ends
         # with the spoken word 'Enter' (stripped from the text).
         should_send = False
-        if self._mode == OutputMode.AUTO_SEND:
+        if self._mode == OutputMode.PROTECTED:
             text, should_send = extract_send_intent(text)
             if not text:
                 return  # trigger alone — nothing to paste or send
@@ -257,13 +257,21 @@ class MacOutputHandler:
 
         self._set_clipboard(text)
         delivered_to = None
-        if self._mode in (OutputMode.AUTO_PASTE, OutputMode.AUTO_SEND):
+        if self._mode in (
+            OutputMode.AUTO_PASTE, OutputMode.AUTO_SEND, OutputMode.PROTECTED
+        ):
             delivered_to = self._simulate_paste(self._resolve_target())
+        if self._mode == OutputMode.AUTO_SEND:
+            # on: always send — Enter follows the paste destination.
+            # No trigger word, no window guard; whatever app received
+            # the text receives the Enter.
+            self._simulate_enter(delivered_to)
+            return None
         if should_send:
-            # Enter guard: only send when pi's window is positively
-            # frontmost right now. The title is re-read AFTER the paste
-            # so a failed targeted paste (or a focus flip) can't make
-            # the Enter land in the wrong app.
+            # protected Enter guard: only send when pi's window is
+            # positively frontmost right now. The title is re-read AFTER
+            # the paste so a failed targeted paste (or a focus flip)
+            # can't make the Enter land in the wrong app.
             if _is_pi_window(_frontmost_window_title()):
                 self._simulate_enter(delivered_to)
             else:

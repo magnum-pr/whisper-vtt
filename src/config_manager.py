@@ -25,7 +25,8 @@ DEFAULT_AUDIO_DEVICE_NAME: Optional[str] = None
 # Valid values
 VALID_MODIFIERS = frozenset({"ctrl", "shift", "alt", "win"})
 VALID_RECORDING_MODES = frozenset({"toggle", "push_to_talk", "wake_word"})
-VALID_OUTPUT_MODES = frozenset({"auto_paste", "auto_send", "clipboard"})
+VALID_OUTPUT_MODES = frozenset(
+    {"auto_paste", "auto_send", "protected", "clipboard"})
 
 
 def _default_config() -> AppConfig:
@@ -94,7 +95,8 @@ def _validate_output_mode(mode) -> OutputMode:
     if isinstance(mode, str) and mode in VALID_OUTPUT_MODES:
         return OutputMode(mode)
     logger.warning(
-        "Invalid output_mode %r (expected 'auto_paste', 'auto_send', or 'clipboard'). Using default: '%s'.",
+        "Invalid output_mode %r (expected 'auto_paste', 'auto_send', "
+        "'protected', or 'clipboard'). Using default: '%s'.",
         mode,
         DEFAULT_OUTPUT_MODE.value,
     )

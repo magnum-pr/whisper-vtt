@@ -12,7 +12,7 @@ key = "`"             # letters, digits, f1-f12, or names like "space", "enter",
 mode = "toggle"       # "toggle" | "push_to_talk" | "wake_word"
 
 [output]
-mode = "auto_paste"   # "clipboard" | "auto_paste" | "auto_send"
+mode = "auto_paste"   # "clipboard" | "auto_paste" (auto_send off) | "auto_send" (on: always Enter) | "protected" (spoken 'Enter' + pi-window guard)
 paste_target = "pi"   # "frontmost" | "pi" (auto-resolve VS Code/Terminal) | process name
 
 [vad]

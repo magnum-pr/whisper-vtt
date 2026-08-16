@@ -85,6 +85,8 @@ class TestValidateOutputMode:
     def test_valid(self):
         assert _validate_output_mode("auto_paste") == OutputMode.AUTO_PASTE
         assert _validate_output_mode("clipboard") == OutputMode.CLIPBOARD
+        assert _validate_output_mode("auto_send") == OutputMode.AUTO_SEND
+        assert _validate_output_mode("protected") == OutputMode.PROTECTED
 
     def test_invalid_returns_default(self):
         assert _validate_output_mode("paste") == DEFAULT_OUTPUT_MODE

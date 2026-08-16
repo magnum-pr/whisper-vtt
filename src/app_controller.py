@@ -287,10 +287,10 @@ class AppController:
             # Drop box side channel — every transcription is journaled for
             # pi's whisper-vtt skill (tasks, lessons, journal, status).
             # Never blocks or raises; the paste/send path is primary.
-            # In auto_send mode the spoken 'Enter' trigger is a command,
+            # In protected mode the spoken 'Enter' trigger is a command,
             # not dictation — strip it so the skill never routes it.
             journal_text = text
-            if self._output_handler.mode == OutputMode.AUTO_SEND:
+            if self._output_handler.mode == OutputMode.PROTECTED:
                 journal_text, _ = extract_send_intent(text)
             if journal_text:
                 append_dictation(journal_text)

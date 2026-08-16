@@ -15,8 +15,9 @@ class RecordingMode(Enum):
 
 
 class OutputMode(Enum):
-    AUTO_PASTE = "auto_paste"
-    AUTO_SEND = "auto_send"
+    AUTO_PASTE = "auto_paste"   # auto_send: off — paste, never Enter
+    AUTO_SEND = "auto_send"     # auto_send: on — paste + Enter always
+    PROTECTED = "protected"     # spoken 'Enter' trigger + pi-window guard
     CLIPBOARD = "clipboard"
 
 

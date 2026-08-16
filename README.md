@@ -154,7 +154,7 @@ key = "`"             # see Supported keys below
 mode = "wake_word"    # "toggle" | "push_to_talk" | "wake_word"
 
 [output]
-mode = "auto_send"    # "clipboard" | "auto_paste" | "auto_send"
+mode = "auto_send"    # "clipboard" | "auto_paste" | "auto_send" | "protected"
 paste_target = "pi"     # "frontmost" | "pi" | process name (macOS)
 
 [vad]
@@ -192,8 +192,9 @@ device_name = "MacBook Pro Microphone"  # exact device name; "" = system default
 | Mode | Behavior |
 |---|---|
 | `clipboard` *(default)* | Text lands on the clipboard — you paste manually (Cmd+V / Ctrl+V) |
-| `auto_paste` | Copies to the clipboard **and** pastes into the target app (see `paste_target`); you press Enter yourself. Safe general-purpose mode |
-| `auto_send` | Like `auto_paste`, plus an **Enter press — but only when you end your dictation with the spoken word "Enter"** (stripped from the text). It never sends unless you explicitly say the trigger |
+| `auto_paste` — *auto-send: off* | Copies to the clipboard **and** pastes into the target app (see `paste_target`); never presses Enter. Safe general-purpose mode |
+| `auto_send` — *auto-send: on* | Pastes and **always presses Enter** — no trigger word, no window guard. Every dictation is a message. Enter follows the paste destination (whatever app received the text receives the Enter) |
+| `protected` | Like `auto_paste`, plus an **Enter press — but only when you end your dictation with the spoken word "Enter"** (stripped from the text) **and** pi's window is positively frontmost. It never sends unless both conditions hold |
 
 **`paste_target` — which app receives the paste (macOS):**
 
@@ -207,7 +208,7 @@ If the target can't be resolved (pi not running, app name not found), the
 paste falls back to the frontmost app — the text is always on the
 clipboard either way.
 
-**The `auto_send` guard-rail:**
+**The `protected` guard-rail:**
 
 | You say | What happens |
 |---|---|

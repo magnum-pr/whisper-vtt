@@ -375,10 +375,10 @@ class WindowsOutputHandler:
         if not text:
             return
 
-        # auto_send guard-rail: Enter fires only when the dictation ends
+        # protected guard-rail: Enter fires only when the dictation ends
         # with the spoken word 'Enter' (stripped from the text).
         should_send = False
-        if self._mode == OutputMode.AUTO_SEND:
+        if self._mode == OutputMode.PROTECTED:
             text, should_send = extract_send_intent(text)
             if not text:
                 return  # trigger alone — nothing to paste or send
@@ -388,9 +388,9 @@ class WindowsOutputHandler:
         # Set clipboard — this always happens regardless of mode
         self._set_clipboard(text)
 
-        if self._mode in (OutputMode.AUTO_PASTE, OutputMode.AUTO_SEND):
+        if self._mode in (OutputMode.AUTO_PASTE, OutputMode.AUTO_SEND, OutputMode.PROTECTED):
             self._simulate_paste()
-        if should_send:
+        if self._mode == OutputMode.AUTO_SEND or should_send:
             self._simulate_enter()
 
     def _set_clipboard(self, text: str) -> None:

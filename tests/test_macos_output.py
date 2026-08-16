@@ -77,10 +77,52 @@ def test_frontmost_target_resolves_to_none(mock_gui, mock_front):
     assert _handler("frontmost")._resolve_target() is None
 
 
+@patch("src.backends.macos._frontmost_window_title", return_value="PI Code — alignme")
 @patch("src.backends.macos._frontmost_process_name", return_value="Code")
-def test_pi_target_no_activation_when_pi_already_front(mock_front):
-    # pi is frontmost — paste directly, no focus yank
+def test_pi_target_no_activation_when_pi_already_front(mock_front, mock_title):
+    # pi's window is frontmost — paste directly, no focus yank
     assert _handler("pi")._resolve_target() is None
+
+
+@patch("src.backends.macos._frontmost_window_title", return_value="whisper — zsh — 80×24")
+@patch("src.backends.macos._frontmost_process_name", return_value="Terminal")
+@patch("src.backends.macos._gui_process_names", return_value=["Terminal", "Code"])
+def test_pi_target_terminal_front_non_pi_window_resolves_code(mock_gui, mock_front, mock_title):
+    # whisper's own terminal is front — "whisper" contains "pi" as a
+    # substring, but must NOT be treated as pi's window (word boundary)
+    assert _handler("pi")._resolve_target() == "Code"
+
+
+@patch("src.backends.macos._frontmost_window_title", return_value="pi — alignme — zsh")
+@patch("src.backends.macos._frontmost_process_name", return_value="Terminal")
+@patch("src.backends.macos._gui_process_names", return_value=["Terminal", "Code"])
+def test_pi_target_terminal_front_pi_window_no_yank(mock_gui, mock_front, mock_title):
+    # genuine pi terminal is front — no focus yank
+    assert _handler("pi")._resolve_target() is None
+
+
+@patch("src.backends.macos._frontmost_window_title", return_value="whisper — zsh — 80×24")
+@patch("src.backends.macos._frontmost_process_name", return_value="Terminal")
+@patch("src.backends.macos._gui_process_names", return_value=["Terminal"])
+def test_pi_target_terminal_front_non_pi_no_code_falls_back(mock_gui, mock_front, mock_title):
+    # whisper terminal front, no Code running — plain frontmost paste fallback
+    assert _handler("pi")._resolve_target() is None
+
+
+@patch("src.backends.macos._frontmost_window_title", return_value="")
+@patch("src.backends.macos._frontmost_process_name", return_value="Terminal")
+@patch("src.backends.macos._gui_process_names", return_value=["Terminal", "Code"])
+def test_pi_target_terminal_front_unknown_title_resolves_code(mock_gui, mock_front, mock_title):
+    # title lookup failed — no evidence pi is front, prefer Code
+    assert _handler("pi")._resolve_target() == "Code"
+
+
+@patch("src.backends.macos._frontmost_window_title", return_value="README.md — alignme")
+@patch("src.backends.macos._frontmost_process_name", return_value="Code")
+@patch("src.backends.macos._gui_process_names", return_value=["Code"])
+def test_pi_target_code_front_non_pi_window_still_targets_code(mock_gui, mock_front, mock_title):
+    # Code is front but focused elsewhere — no better target than Code
+    assert _handler("pi")._resolve_target() == "Code"
 
 
 @patch("src.backends.macos._frontmost_process_name", return_value="Slack")

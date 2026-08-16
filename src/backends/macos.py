@@ -7,6 +7,7 @@ Real implementations using:
 """
 
 import logging
+import re
 import subprocess
 import threading
 import time
@@ -280,12 +281,21 @@ class MacOutputHandler:
             return None
         front = _frontmost_process_name()
         if target == "pi":
-            if front in PI_HOST_CANDIDATES:
+            # Only skip the focus yank on POSITIVE evidence that pi's
+            # window is already frontmost. Process names are too coarse:
+            # the frontmost Terminal is often whisper's own, not pi's
+            # ("whisper" even contains "pi" as a substring — word
+            # boundary required).
+            if front in PI_HOST_CANDIDATES and _is_pi_window(
+                    _frontmost_window_title()):
                 return None  # pi already front — no focus yank
             gui = _gui_process_names()
-            for candidate in PI_HOST_CANDIDATES:
-                if candidate in gui:
-                    return candidate
+            if "Code" in gui:
+                return "Code"
+            # Terminal is only a safe target when its pi window is
+            # positively identified (handled above). Whisper's own
+            # terminal is always in the GUI list, so falling back to
+            # "Terminal" here would paste into it.
             return None  # no pi host running — plain paste
         # Explicit process name
         if front == target:
@@ -354,6 +364,28 @@ STATUS_COLORS = {
 
 # Pi host apps, in preference order (VS Code reports as "Code").
 PI_HOST_CANDIDATES = ("Code", "Terminal")
+
+# Word-boundary match so "whisper" (contains "pi") is not mistaken for pi.
+PI_TITLE_RE = re.compile(r"\bpi\b", re.IGNORECASE)
+
+
+def _is_pi_window(title: str) -> bool:
+    """True when a window title positively identifies pi's window."""
+    return bool(title) and bool(PI_TITLE_RE.search(title))
+
+
+def _frontmost_window_title() -> str:
+    """Title of the frontmost GUI window, or '' on failure."""
+    try:
+        out = subprocess.run(
+            ["osascript", "-e",
+             'tell application "System Events" '
+             'to get name of front window of first application process '
+             'whose frontmost is true'],
+            capture_output=True, text=True, timeout=8)
+        return out.stdout.strip()
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return ""
 
 
 def _frontmost_process_name() -> str:

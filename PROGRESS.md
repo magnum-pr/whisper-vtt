@@ -1,3 +1,23 @@
+## 2026-08-16 18:45 — Sticky follow-up mode + README refresh (pushed `d87ee15`)
+
+**Sticky sessions (default on).** After any plain dictation, whisper stays armed
+for follow-ups — no wake word between fast commands. Each follow-up is delivered
+live (journaled + delivered like a normal dictation). "that's all" disarms with a
+tick; `[session] sticky = false` opts out.
+
+**Lapse gate.** `[session] lapse_s = 20` — silence past this disarms sticky and
+the next utterance requires "jarvis" again. Podcasts/TV/calls can't hijack the
+mic during thinking pauses. Sticky sessions never accumulate or commit; a
+"start a new session for X" mid-sticky switches to a compile session; "scratch
+that" is ignored (nothing accumulated).
+
+**README rewritten from scratch** — dictation language (modes, overrides,
+sessions, sticky), drop box prefixes, output-paired routing, self-calibrating
+VAD, hot-reload, pi handshake, single-instance guard, full config reference,
+current project structure. jarvis-guide updated with sticky section.
+
+320 passed / 43 skipped / 0 failures. **User action:** restart whisper to load
+sticky mode.
 ## 2026-08-16 18:00 — Dictation session mode (built + pushed `47faa12`)
 
 **"Jarvis, start a new session for AlignMe website"** → chime + "listening" —

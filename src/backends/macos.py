@@ -150,7 +150,7 @@ class MacHotkeyListener:
             return None
         self._key_down = True
         if self._on_activated:
-            self._on_activated(self._build_event(pressed=True))
+            self._dispatch(self._on_activated, self._build_event(pressed=True))
         return None
 
     def _handle_key_up(self, event):
@@ -158,8 +158,25 @@ class MacHotkeyListener:
             return event
         self._key_down = False
         if self._on_released:
-            self._on_released(self._build_event(pressed=False))
+            self._dispatch(self._on_released, self._build_event(pressed=False))
         return None
+
+    def _dispatch(self, callback, event: HotkeyEvent) -> None:
+        """Run a hotkey callback off the Quartz tap thread.
+
+        The callback chain starts recording (opens audio streams, shows
+        notifications) — too slow for a realtime event tap. macOS disables
+        taps whose callbacks exceed the deadline ('Tap disabled by timeout'
+        in the logs), so heavy work must never run inline here.
+        """
+        def _run():
+            try:
+                callback(event)
+            except Exception as e:
+                logger.warning("Hotkey callback error: %s", e)
+
+        threading.Thread(
+            target=_run, daemon=True, name="hotkey-dispatch").start()
 
     def _build_event(self, pressed: bool) -> HotkeyEvent:
         """Build a HotkeyEvent matching src.models.HotkeyEvent exactly.

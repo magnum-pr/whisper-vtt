@@ -46,6 +46,10 @@ class WakeWordListener:
         self._cooldown_until: float = 0.0
         self._thread: Optional[threading.Thread] = None
         self._decoder: Optional[object] = None
+        # Guards against overlapping dispatches; detection callbacks are
+        # handed to a worker thread (see below) so the PortAudio callback
+        # returns immediately.
+        self._dispatching = False
         # Set while no InputStream is open. Cleared on open, set again on
         # close — pause() waits on it so the recording stream never opens
         # while the wake word stream still holds the mic.
@@ -57,6 +61,21 @@ class WakeWordListener:
     def set_on_detected(self, callback: Callable[[], None]) -> None:
         """Set callback invoked when the wake word is detected."""
         self._on_detected = callback
+
+    def _dispatch_detected(self) -> None:
+        """Run the detection callback off the PortAudio callback thread.
+
+        The callback chain pauses the wake word listener, which must wait
+        for this stream to close — impossible while we're still inside the
+        stream's own callback (deadlock, then mic contention).
+        """
+        try:
+            if self._on_detected:
+                self._on_detected()
+        except Exception as e:
+            logger.warning("Wake word callback error: %s", e)
+        finally:
+            self._dispatching = False
 
     # ── Lifecycle ──────────────────────────────────────────────────────
 
@@ -211,11 +230,13 @@ class WakeWordListener:
                     )
                     cooldown_frames = COOLDOWN_FRAMES
                     consecutive_hits = 0
-                    if self._on_detected:
-                        try:
-                            self._on_detected()
-                        except Exception as e:
-                            logger.warning("Wake word callback error: %s", e)
+                    if self._on_detected and not self._dispatching:
+                        self._dispatching = True
+                        threading.Thread(
+                            target=self._dispatch_detected,
+                            daemon=True,
+                            name="wake-word-dispatch",
+                        ).start()
             else:
                 consecutive_hits = 0
 

@@ -1,3 +1,33 @@
+## 2026-08-16 17:10 — Resource + environment pass (afternoon session)
+
+Built and pushed (`a4bfc9e`). 272 passed / 42 skipped / 0 failures.
+
+**Single-instance guard.** `src/single_instance.py` — pidfile in the app config dir
+(`whisper.pid`, gitignored). A new launch SIGTERMs any live whisper instance, waits
+up to 5s, takes over. A recycled pid belonging to a non-whisper process is never
+killed (verified via `ps` cmdline match). Released on exit, only if still ours.
+
+**Output-paired input routing (corrected spec).** NOT "follow the OS default input"
+(the Scarlett was macOS's default input but the user hears MacBook speakers).
+Whisper now routes the mic to the input paired with the current default OUTPUT:
+exact name match (AirPods) -> stem match (MacBook Pro Speakers <-> MacBook Pro
+Microphone) -> MacBook mic fallback -> OS default input as last resort. Pinned
+`device_name` still works. Resolved fresh at EVERY stream open, so output switches
+and plug/unplug apply on the next dictation. Verified live: default output MacBook
+Speakers -> paired input MacBook Pro Microphone (Scarlett ignored).
+
+**Environment refresher.** `src/environment.py` — daemon tick every
+`refresh_interval_s` (120s): latches paired-input changes; the controller restarts
+the wake word stream while idle (recorder already resolves per-start). Rolling
+noise floor (20th percentile over 120s of IDLE wake-word chunks only — recording
+chunks never pollute it) -> VAD silence threshold = floor + calibration_margin_db
+(8dB), clamped [-60,-28], pushed at every recording start. Fixes the fan problem:
+silence line tracks the ambient floor instead of a fixed -50dB.
+
+**Config:** `[environment] refresh_interval_s / calibration_margin_db`; live config
+set to `device_name = "auto"`.
+
+The running whisper instance (restarted 17:02) is already on this code.
 ## 2026-08-16 02:40 — Voice loop improvements Q-0…Q-3 (overnight run)
 
 Built while the user slept — the four queued improvement ideas:
